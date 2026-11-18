@@ -1,200 +1,188 @@
-// Solmar Bay — the six-mission story. Jax Moreno, a courier who owes the
-// fixer Tia Sol one last favour, works the debt off across the city. Each
-// mission is data plus a small update step: go to a marker, do the thing,
-// get paid. The HUD reads currentObjective() for its objective line.
-import { CFG } from './config.js';
-import { dist2 } from './util.js';
-import { makeCar } from './vehicles.js';
+// MARISOL HEAT — missions.js
+// One job: the 6-mission story of Riko Vale and Tia Sol. Every mission ends
+// at a REAL place with a REAL building and sign — Cafe Alba has Tia standing
+// outside it, Bay Trust Bank has columns and a vault door, the pier is a
+// pier. No mission is "walk to an empty coordinate": each step names a
+// person or a building the player can see.
+import * as THREE from "three";
+import { CONFIG } from "./config.js";
+import { dist } from "./util.js";
 
-export const MISSIONS = [
-  {
-    id: 'meet-tia',
-    title: '1 — Coffee with Tia',
-    objective: 'Meet Tia Sol at Cafe Alba',
-    brief: 'Tia Sol runs Solmar Bay from a corner table. She has one last job for you — go hear her out.',
-    reward: 300,
-    marker: (W) => ({ x: W.city.places.cafe.x, z: W.city.places.cafe.z, label: 'Cafe Alba' }),
-  },
-  {
-    id: 'borrow-coupe',
-    title: '2 — Borrow a Coupe',
-    objective: 'Steal the gold coupe, then park it at Marina Garage',
-    brief: 'Tia needs a fast car with no questions attached. The gold coupe by Palm Court is yours to borrow.',
-    reward: 500,
-    marker: (W) => ({ x: W.city.places.garage.x, z: W.city.places.garage.z, label: 'Marina Garage' }),
-  },
-  {
-    id: 'sunset-delivery',
-    title: '3 — Sunset Delivery',
-    objective: 'Deliver the package to the end of Solmar Pier — 90 seconds',
-    brief: 'A package, a pier, a deadline. The buyer waits at the end of the pier and does not wait long.',
-    reward: 700,
-    timeLimit: 90,
-  },
-  {
-    id: 'lose-heat',
-    title: '4 — Lose the Heat',
-    objective: 'Lose the cops — get your wanted level back to zero',
-    brief: 'The pickup went loud. Three stars and every cruiser in the city. Break line of sight and vanish.',
-    reward: 800,
-  },
-  {
-    id: 'cash-drops',
-    title: '5 — Cash Drops',
-    objective: 'Collect the cash drops around the city',
-    brief: 'Tia stashed five envelopes across Solmar Bay. Pick them all up — the city is watching.',
-    reward: 1000,
-  },
-  {
-    id: 'solmar-score',
-    title: '6 — The Solmar Score',
-    objective: 'Hit Bay Trust Bank, grab the vault cash, reach the pier',
-    brief: 'One bank, one vault, one getaway. Take the cash from Bay Trust and be at the pier before the city wakes up.',
-    reward: 5000,
-  },
-];
+export function createMissions(scene, city, tia) {
+  // Mission marker: a golden beacon column + spinning diamond, visible across
+  // the district so the player navigates by the world, not only the minimap.
+  const beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.6, 1.6, 60, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffc21a, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
+  );
+  beacon.visible = false;
+  scene.add(beacon);
+  const diamond = new THREE.Mesh(new THREE.OctahedronGeometry(1.1),
+    new THREE.MeshBasicMaterial({ color: 0xffc21a }));
+  diamond.visible = false;
+  scene.add(diamond);
 
-export function currentObjective(W) {
-  if (W.storyComplete) return 'Story complete — Solmar Bay is yours. Free roam!';
-  const m = MISSIONS[W.missionIndex];
-  if (!m) return '';
-  let text = m.objective;
-  if (W.missionIndex === 4) {
-    const left = W.mission.dropsLeft ?? 5;
-    text = `Collect the cash drops around the city (${5 - left}/5)`;
-  }
-  if (W.missionIndex === 2 && W.missionTimer > 0) {
-    text += ` — ${Math.ceil(W.missionTimer)}s left`;
-  }
-  if (W.missionIndex === 5 && W.mission.phase === 'escape') {
-    text = 'Vault cash grabbed — reach the pier to escape!';
-  }
-  if (W.missionIndex === 5 && W.mission.phase === 'grab') {
-    text = 'Hold the vault marker to crack it open…';
-  }
-  return text;
-}
+  const P = CONFIG.PLACES;
+  const state = {
+    index: 0, step: 0, done: false, allDone: false,
+    objective: "", subtitle: "", timer: 0, suppressBeacon: false,
+    marker: { x: 0, z: 0, visible: false },
+    drops: [], targetCar: null, vaultTaken: false,
+  };
 
-function markerFor(W) {
-  const i = W.missionIndex;
-  if (i === 0) return { x: W.city.places.cafe.x, z: W.city.places.cafe.z };
-  if (i === 1) return { x: W.city.places.garage.x, z: W.city.places.garage.z };
-  if (i === 2) return { x: W.city.places.pierEnd.x, z: W.city.places.pierEnd.z };
-  if (i === 4) return null; // drops are the markers
-  if (i === 5) {
-    return W.mission.phase === 'escape'
-      ? { x: W.city.places.pierEnd.x, z: W.city.places.pierEnd.z }
-      : { x: W.city.places.bank.x, z: W.city.places.bank.z };
-  }
-  return null;
-}
+  const DIALOG = {
+    m1: [
+      "TIA: Riko! You actually came. The Bay Trust job needs a driver, not a hero.",
+      "TIA: First, prove you can move in this city. Borrow a coupe — any coupe — and bring it to Quick Coat.",
+      "RIKO: Borrow. Right. Nobody says steal anymore.",
+    ],
+    m3: [
+      "TIA: Sunset package, Port to Pier. Ninety seconds. The tide waits for no one.",
+    ],
+    m6: [
+      "TIA: Vault's open. Grab it, run for the pier, and do NOT stop for the view.",
+      "RIKO: Three stars and a sunset. This is why I came back to Marisol.",
+    ],
+  };
 
-export function startMission(W, index) {
-  const m = MISSIONS[index];
-  W.missionIndex = index;
-  W.mission = { id: m.id, phase: 'go', dropsLeft: 5, grabTimer: 0, timer: m.timeLimit || 0 };
-  W.missionTimer = m.timeLimit || 0;
-  W.events.push('mission-start');
-  if (index === 1) {
-    // Park the gold coupe on Palm Court street for Jax to steal.
-    const coupe = makeCar(W, 112, 128, Math.PI / 2, { kind: 'coupe', color: 0xf2c230, driver: false, isTraffic: false });
-    coupe.missionCar = true;
-    W.cars.push(coupe);
-    W.mission.coupe = coupe;
-  }
-  if (index === 3) {
-    W.addWanted(3);
-  }
-  if (index === 4) {
-    // Five cash drops scattered across the city.
-    const spots = [
-      { x: -168, z: -168 }, { x: 168, z: -168 }, { x: -168, z: 168 },
-      { x: 168, z: 168 }, { x: 0, z: 276 },
-    ];
-    for (const s of spots) {
-      W.pickups.push({ kind: 'cash', x: s.x, z: s.z, amount: 150, ttl: 600 });
+  function setObjective(text, x, z, sub = "") {
+    state.objective = text;
+    state.subtitle = sub;
+    if (x !== undefined) {
+      state.marker = { x, z, visible: true };
+      beacon.position.set(x, 30, z);
+      diamond.position.set(x, 8, z);
+      beacon.visible = !state.suppressBeacon; diamond.visible = !state.suppressBeacon;
     }
   }
-}
-
-function completeMission(W, audio) {
-  const m = MISSIONS[W.missionIndex];
-  W.addCash(m.reward);
-  W.missionsDone += 1;
-  W.events.push('mission-complete');
-  audio.missionDone();
-  W.spawnBurst(W.player.x, W.player.z, 0xf2c230, 24, 5);
-  if (W.missionIndex >= MISSIONS.length - 1) {
-    W.storyComplete = true;
-    W.state = 'complete';
-    W.events.push('story-complete');
-    return;
-  }
-  startMission(W, W.missionIndex + 1);
-}
-
-function failMission(W, reason) {
-  W.events.push('mission-failed');
-  // Timed delivery failed: restart it from the top.
-  startMission(W, W.missionIndex);
-}
-
-export function updateMissions(W, dt, audio) {
-  if (!W.mission || W.storyComplete) return;
-  const i = W.missionIndex;
-  const p = W.player;
-
-  if (i === 2) {
-    W.missionTimer -= dt;
-    if (W.missionTimer <= 0) { failMission(W, 'time'); return; }
+  function clearMarker() {
+    state.marker.visible = false;
+    beacon.visible = false; diamond.visible = false;
   }
 
-  const marker = markerFor(W);
-  const atMarker = marker ? dist2(p.x, p.z, marker.x, marker.z) < CFG.MARKER_RADIUS : false;
+  function startMission(i) {
+    state.index = i; state.step = 0;
+    if (i === 0) setObjective("Meet Tia Sol at Cafe Alba", P.cafeAlba.x, P.cafeAlba.z - 14, "Cafe Alba — follow the orange awning");
+    else if (i === 1) setObjective("Steal a coupe — any coupe (E)", 84, -140, "Tia wants a fast car. Borrow one.");
+    else if (i === 2) {
+      state.timer = 90;
+      setObjective("Pick up the package at the Port", -196, 84, "90 seconds on the clock");
+    }
+    else if (i === 3) setObjective("Get 2 stars — then LOSE the heat", 0, 0, "Steal a car in front of witnesses, or wait for trouble");
+    else if (i === 4) {
+      state.drops = [
+        [-140, -140], [140, 140], [-84, 196], [196, -28], [0, 84],
+      ];
+      setObjective("Collect the cash drops (0/5)", state.drops[0][0], state.drops[0][1], "Five envelopes, five corners of Marisol");
+    }
+    else if (i === 5) setObjective("Hit Bay Trust Bank — reach the vault door", P.bank.x, P.bank.z - 12, "The big one. Bring a fast car.");
+  }
 
-  if (i === 0 && atMarker) { completeMission(W, audio); return; }
-
-  if (i === 1) {
-    const coupe = W.mission.coupe;
-    const inCoupe = p.inCar && p.car === coupe;
-    if (inCoupe && atMarker) { completeMission(W, audio); return; }
-    if (!inCoupe && coupe && !p.inCar) {
-      // Point Jax at the coupe until he takes it.
-      W.mission.hint = { x: coupe.x, z: coupe.z };
+  function completeMission(ctx) {
+    const reward = CONFIG.MISSIONS[state.index].reward;
+    ctx.cash += reward;
+    ctx.audio.missionDone();
+    ctx.toast(`Mission complete: ${CONFIG.MISSIONS[state.index].name}  +$${reward}`);
+    clearMarker();
+    if (state.index >= CONFIG.MISSIONS.length - 1) {
+      state.allDone = true;
+      state.objective = "All missions complete — Marisol is yours. Free roam, races, slots.";
+      ctx.banner("THE MARISOL SCORE — DONE", "Riko Vale owns this city now.");
+    } else {
+      startMission(state.index + 1);
     }
   }
 
-  if (i === 2 && atMarker) { completeMission(W, audio); return; }
+  startMission(0);
 
-  if (i === 3) {
-    if (W.wanted === 0) { completeMission(W, audio); return; }
-  }
+  return {
+    state, beacon, diamond,
+    currentName() { return CONFIG.MISSIONS[state.index].name; },
+    // ctx: {player, vehicles, police, combat, cash, audio, toast, banner, spawnPickup, peds}
+    update(dt, ctx) {
+      if (state.allDone) return;
+      const p = ctx.player.state;
+      const px = p.inCar ? p.inCar.x : p.x;
+      const pz = p.inCar ? p.inCar.z : p.z;
+      diamond.rotation.y += dt * 2;
+      diamond.position.y = 8 + Math.sin(performance.now() / 400) * 0.6;
 
-  if (i === 4) {
-    if (W.mission.dropsLeft <= 0) { completeMission(W, audio); return; }
-  }
-
-  if (i === 5) {
-    if (W.mission.phase === 'go' && atMarker) {
-      W.mission.phase = 'grab';
-      W.addWanted(2);
-      W.events.push('vault-start');
-    } else if (W.mission.phase === 'grab') {
-      if (atMarker) {
-        W.mission.grabTimer += dt;
-        if (W.mission.grabTimer > 5) {
-          W.mission.phase = 'escape';
-          W.addCash(2500);
-          W.addWanted(2);
-          W.events.push('vault-grabbed');
-          audio.cash();
+      const i = state.index;
+      if (i === 0) {
+        if (state.step === 0 && dist(px, pz, P.cafeAlba.x, P.cafeAlba.z - 14) < 4) {
+          state.step = 1;
+          state.subtitle = DIALOG.m1[0];
+          ctx.banner("Coffee with Tia", "Tia Sol is waiting by the tables.");
+          setObjective("Talk to Tia (press E near her)", tia.position.x, tia.position.z);
+        } else if (state.step === 1 && dist(px, pz, tia.position.x, tia.position.z) < 3.5) {
+          if (ctx.pressedE) {
+            state.subtitle = DIALOG.m1[1];
+            completeMission(ctx);
+          }
         }
-      } else {
-        W.mission.grabTimer = Math.max(0, W.mission.grabTimer - dt);
+      } else if (i === 1) {
+        if (state.step === 0 && p.inCar && p.inCar.type.name === "Coupe") {
+          state.step = 1;
+          state.targetCar = p.inCar;
+          setObjective("Deliver the coupe to Quick Coat Garage", P.garage.x, P.garage.z, "Don't scratch it. Much.");
+        } else if (state.step === 1 && p.inCar === state.targetCar && dist(px, pz, P.garage.x, P.garage.z) < 10) {
+          completeMission(ctx);
+        }
+      } else if (i === 2) {
+        state.timer -= dt;
+        state.objective = `Deliver the package to the pier — ${Math.max(0, Math.ceil(state.timer))}s left`;
+        if (state.step === 0 && dist(px, pz, -196, 84) < 8) {
+          state.step = 1;
+          state.subtitle = DIALOG.m3[0];
+          setObjective("Package aboard — reach Marisol Pier!", P.pier.x, P.pier.z);
+        } else if (state.step === 1 && dist(px, pz, P.pier.x, P.pier.z) < 10) {
+          completeMission(ctx);
+        } else if (state.timer <= 0) {
+          state.timer = 90; state.step = 0;
+          ctx.toast("Delivery failed — the tide waited for no one. Try again.");
+          setObjective("Pick up the package at the Port", -196, 84, "90 seconds on the clock");
+        }
+      } else if (i === 3) {
+        if (state.step === 0) {
+          if (ctx.police.state.wanted >= 2) {
+            state.step = 1;
+            setObjective("LOSE the heat — get to 0 stars", P.garage.x, P.garage.z, "Respray at Quick Coat ($250) clears your description fast");
+          } else {
+            setObjective("Get 2 stars — steal a car where people can see", 0, 0, "Or smash something. The city is watching.");
+            // nudge: after 20 s with no heat, a witness reports the player anyway
+            state.nudge = (state.nudge || 0) + dt;
+            if (state.nudge > 20) { ctx.police.addWanted(2, px, pz); state.nudge = 0; }
+          }
+        } else if (ctx.police.state.wanted === 0) {
+          completeMission(ctx);
+        }
+      } else if (i === 4) {
+        const remaining = state.drops.length;
+        if (remaining === 0) { completeMission(ctx); return; }
+        const [dx, dz] = state.drops[0];
+        state.objective = `Collect the cash drops (${5 - remaining}/5)`;
+        setObjective(state.objective, dx, dz);
+        if (dist(px, pz, dx, dz) < 4) {
+          state.drops.shift();
+          ctx.cash += 100;
+          ctx.audio.cash();
+          ctx.toast("Cash drop +$100");
+          if (state.drops.length === 0) completeMission(ctx);
+        }
+      } else if (i === 5) {
+        if (state.step === 0 && dist(px, pz, P.bank.x, P.bank.z - 12) < 5) {
+          state.step = 1;
+          state.vaultTaken = true;
+          ctx.cash += 500;
+          ctx.police.setWanted(3, { x: px, z: pz });
+          state.subtitle = DIALOG.m6[0];
+          ctx.banner("THE MARISOL SCORE", "Vault cash grabbed — reach the pier to escape!");
+          setObjective("Escape to Marisol Pier — 3 stars!", P.pier.x, P.pier.z);
+        } else if (state.step === 1 && dist(px, pz, P.pier.x, P.pier.z) < 10) {
+          state.subtitle = DIALOG.m6[1];
+          completeMission(ctx);
+        }
       }
-    } else if (W.mission.phase === 'escape' && atMarker) {
-      completeMission(W, audio);
-      return;
-    }
-  }
+    },
+  };
 }

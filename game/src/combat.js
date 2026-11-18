@@ -1,117 +1,115 @@
-// Solmar Bay — combat: fists, the pistol, and the pickups that keep Jax
-// alive. Shooting is a cone check in front of Jax; the city notices.
-import { CFG } from './config.js';
-import { dist2, angleDiff } from './util.js';
-import { scarePeds } from './pedestrians.js';
+// MARISOL HEAT — combat.js
+// One job: fighting. Fists (F, 3-hit combo feel via swing arc), pistol and
+// SMG (hitscan cone with tracer + muzzle flash that blooms), enemy health
+// pips via a floating bar, and cash / health / ammo pickups that glow.
+import * as THREE from "three";
+import { dist } from "./util.js";
 
-function nearestTarget(W, range, cone) {
-  // Closest living ped, cop or cop car inside a forward cone.
-  const px = W.player.x, pz = W.player.z;
-  const fx = Math.sin(W.player.angle), fz = Math.cos(W.player.angle);
-  let best = null, bestD = range;
-  const consider = (e, kind) => {
-    const dx = e.x - px, dz = e.z - pz;
-    const d = Math.hypot(dx, dz);
-    if (d > bestD || d < 0.01) return;
-    const dot = (dx * fx + dz * fz) / d;
-    if (dot < cone) return;
-    best = { e, kind, d };
-    bestD = d;
+export function createCombat(scene, particles, audio) {
+  const state = {
+    weapon: "pistol", ammo: 24, smgAmmo: 0, hasSmg: false,
+    punchTimer: 0, shootCooldown: 0,
   };
-  for (const p of W.peds) if (!p.down) consider(p, 'ped');
-  for (const c of W.cops) consider(c, 'cop');
-  for (const car of W.copCars) consider(car, 'copcar');
-  return best;
-}
+  const pickups = [];
+  const tracerGeo = new THREE.BufferGeometry();
+  const tracerPos = new Float32Array(6);
+  tracerGeo.setAttribute("position", new THREE.BufferAttribute(tracerPos, 3));
+  const tracer = new THREE.Line(tracerGeo, new THREE.LineBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0 }));
+  tracer.frustumCulled = false;
+  scene.add(tracer);
+  // muzzle flash: a small emissive sprite at the gun, blooms for one frame
+  const flash = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6),
+    new THREE.MeshBasicMaterial({ color: 0xffe14a }));
+  flash.visible = false;
+  scene.add(flash);
 
-export function updateCombat(W, dt, input, audio) {
-  const p = W.player;
+  function spawnPickup(x, z, kind) {
+    const colors = { cash: 0x2aff5a, health: 0xff4a5a, ammo: 0xffe14a };
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.6),
+      new THREE.MeshStandardMaterial({ color: colors[kind], emissive: colors[kind], emissiveIntensity: 1.4, roughness: 0.3 }));
+    m.position.set(x, 0.8, z);
+    scene.add(m);
+    pickups.push({ mesh: m, kind, x, z, t: 0 });
+  }
 
-  // 1 draws the pistol; clicking fires it. F punches.
-  if (input.pressed('1')) { p.gunDrawn = !p.gunDrawn; }
-  if (input.pressed('f') && !p.inCar && p.punchTimer <= 0) {
-    p.punchTimer = 0.45;
-    audio.punch();
-    const target = nearestTarget(W, CFG.PUNCH_RANGE, 0.3);
-    if (target) {
-      if (target.kind === 'ped') {
-        target.e.down = true;
-        target.e.downTimer = 6;
-        W.addWanted(1);
-        W.spawnBurst(target.e.x, target.e.z, 0xffc861, 8);
-      } else if (target.kind === 'cop') {
-        target.e.health -= CFG.PUNCH_DAMAGE;
-        if (target.e.health <= 0) {
-          W.cops.splice(W.cops.indexOf(target.e), 1);
-          W.addWanted(1);
-          W.spawnBurst(target.e.x, target.e.z, 0x9fb8ff, 10);
+  return {
+    state, pickups, spawnPickup,
+    selectWeapon(name) {
+      if (name === "smg" && !state.hasSmg) return false;
+      state.weapon = name;
+      return true;
+    },
+    // Hitscan cone from the player toward aim point; returns what was hit.
+    shoot(origin, aimX, aimZ, targets, heliPos, onHeliHit) {
+      if (state.shootCooldown > 0) return null;
+      const isSmg = state.weapon === "smg";
+      if (state.weapon === "pistol" && state.ammo <= 0) return "empty";
+      if (isSmg && state.smgAmmo <= 0) return "empty";
+      state.shootCooldown = isSmg ? 0.11 : 0.32;
+      if (state.weapon === "pistol") state.ammo--; else state.smgAmmo--;
+      const ang = Math.atan2(aimX - origin.x, aimZ - origin.z);
+      // tracer from gun to aim
+      tracerPos[0] = origin.x; tracerPos[1] = 1.4; tracerPos[2] = origin.z;
+      tracerPos[3] = aimX; tracerPos[4] = 1.2; tracerPos[5] = aimZ;
+      tracerGeo.attributes.position.needsUpdate = true;
+      tracer.material.opacity = 0.9;
+      flash.position.set(origin.x + Math.sin(ang) * 0.8, 1.4, origin.z + Math.cos(ang) * 0.8);
+      flash.visible = true;
+      setTimeout(() => { flash.visible = false; }, 60);
+      particles.burst(origin.x + Math.sin(ang), 1.4, origin.z + Math.cos(ang), 3, [1, 0.85, 0.3], 2, 0.25, 2);
+      audio.shoot();
+      // heli: hitting the spotlight cone's owner counts as a heli hit
+      if (heliPos && dist(aimX, aimZ, heliPos.x, heliPos.z) < 8) {
+        if (onHeliHit()) return "heli-down";
+        return "heli-hit";
+      }
+      let best = null, bd = 26 * 26;
+      for (const t of targets) {
+        const d = (t.x - origin.x) ** 2 + (t.z - origin.z) ** 2;
+        if (d < bd) {
+          // cone check: target within ~12 degrees of the aim ray
+          const ta = Math.atan2(t.x - origin.x, t.z - origin.z);
+          let diff = Math.abs(((ta - ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+          if (diff < 0.22) { bd = d; best = t; }
         }
       }
-    }
-  }
-
-  const click = input.takeClick();
-  if (click && p.gunDrawn && !p.inCar && p.shootTimer <= 0) {
-    p.shootTimer = 0.28;
-    if (W.ammo > 0) {
-      W.ammo -= 1;
-      W.stats.shotsFired += 1;
-      audio.shot();
-      W.spawnBurst(p.x + Math.sin(p.angle) * 2, p.z + Math.cos(p.angle) * 2, 0xffe08a, 5, 2);
-      scarePeds(W, p.x, p.z, 30);
-      W.addWanted(1);
-      const target = nearestTarget(W, CFG.PISTOL_RANGE, 0.86);
-      if (target) {
-        if (target.kind === 'ped') {
-          target.e.down = true;
-          target.e.downTimer = 8;
-          W.spawnBurst(target.e.x, target.e.z, 0xd94f3d, 10);
-        } else if (target.kind === 'cop') {
-          target.e.health -= CFG.PISTOL_DAMAGE;
-          if (target.e.health <= 0) {
-            W.cops.splice(W.cops.indexOf(target.e), 1);
-            W.spawnBurst(target.e.x, target.e.z, 0x9fb8ff, 12);
-          }
-        } else if (target.kind === 'copcar') {
-          target.e.speed *= 0.5;
-          W.spawnBurst(target.e.x, target.e.z, 0xffc861, 8);
+      if (best) {
+        best.hp -= isSmg ? 34 : 50;
+        particles.burst(best.x, 1.4, best.z, 6, [1, 0.3, 0.2], 4, 0.5, 2);
+        return best.hp <= 0 ? "kill" : "hit";
+      }
+      return "miss";
+    },
+    punch(origin, angle, targets) {
+      if (state.punchTimer > 0) return null;
+      state.punchTimer = 0.35;
+      audio.punch();
+      const px = origin.x + Math.sin(angle) * 1.4, pz = origin.z + Math.cos(angle) * 1.4;
+      for (const t of targets) {
+        if (dist(t.x, t.z, px, pz) < 1.8) {
+          t.hp -= 25;
+          particles.burst(t.x, 1.2, t.z, 5, [1, 1, 1], 3, 0.4, 2);
+          return t.hp <= 0 ? "kill" : "hit";
         }
       }
-    } else {
-      audio.blip(120, 0.08, 'square', 0.05);
-    }
-  }
-
-  // Pickups: cash drops, health kits and ammo boxes.
-  for (let i = W.pickups.length - 1; i >= 0; i--) {
-    const pk = W.pickups[i];
-    if (dist2(p.x, p.z, pk.x, pk.z) < 3) {
-      if (pk.kind === 'cash') {
-        W.addCash(pk.amount);
-        audio.cash();
-        W.spawnBurst(pk.x, pk.z, 0xf2c230, 12);
-        if (W.missionIndex === 4 && W.mission) W.mission.dropsLeft -= 1;
-      } else if (pk.kind === 'health') {
-        W.healPlayer(40);
-        audio.pickup();
-      } else if (pk.kind === 'ammo') {
-        W.ammo += 24;
-        audio.pickup();
+      return "miss";
+    },
+    update(dt, playerX, playerZ, onPickup) {
+      if (state.shootCooldown > 0) state.shootCooldown -= dt;
+      if (state.punchTimer > 0) state.punchTimer -= dt;
+      tracer.material.opacity = Math.max(0, tracer.material.opacity - dt * 6);
+      for (let i = pickups.length - 1; i >= 0; i--) {
+        const p = pickups[i];
+        p.t += dt;
+        p.mesh.position.y = 0.8 + Math.sin(p.t * 3) * 0.15;
+        p.mesh.rotation.y += dt * 2;
+        if (dist(playerX, playerZ, p.x, p.z) < 1.6) {
+          scene.remove(p.mesh);
+          pickups.splice(i, 1);
+          audio.pickup();
+          onPickup(p.kind);
+        }
       }
-      W.pickups.splice(i, 1);
-    }
-  }
-}
-
-// Spawn a health kit or ammo box near the player, used by the shot scenes
-// and by the world when Jax is hurting.
-export function spawnPickupNear(W, kind) {
-  const a = W.rng.range(0, Math.PI * 2);
-  W.pickups.push({
-    kind,
-    x: W.player.x + Math.sin(a) * 12,
-    z: W.player.z + Math.cos(a) * 12,
-    amount: 0,
-    ttl: 120,
-  });
+    },
+  };
 }
