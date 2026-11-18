@@ -1,81 +1,92 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solmar Bay — an open-world crime game</title>
+<title>MARISOL HEAT — Heli Pursuit, Radio &amp; Respray</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="./src/style.css">
+<link rel="stylesheet" href="src/style.css">
 <script type="importmap">
 { "imports": { "three": "./vendor/three/three.module.min.js" } }
 </script>
 </head>
 <body>
-<canvas id="game" aria-label="Solmar Bay: explore the city on foot or by car, take on missions for Tia Sol, and stay ahead of the police"></canvas>
+<canvas id="game"></canvas>
 
 <div id="hud">
   <div id="hud-top-left">
+    <div id="hud-stars"></div>
+    <div id="hud-wanted-label"></div>
     <div id="hud-cash">$150</div>
-    <div id="hud-health"><div id="hud-health-fill"></div></div>
-    <div id="hud-stars">☆☆☆☆☆</div>
+    <div id="hud-bars">
+      <div class="bar"><div id="hud-health" style="width:100%"></div></div>
+      <div class="bar armor"><div id="hud-armor" style="width:0%"></div></div>
+    </div>
   </div>
   <div id="hud-top-right">
-    <div id="hud-time">17:24</div>
-    <div id="hud-ammo">👊 Fists</div>
+    <canvas id="hud-minimap" width="170" height="170"></canvas>
+    <div id="hud-clock">17:45</div>
+    <div id="hud-radio">♪ WAVE 88</div>
+  </div>
+  <div id="hud-bottom-left">
     <div id="hud-speed"></div>
+    <div id="hud-ammo">PISTOL 24</div>
   </div>
-  <div id="hud-objective"></div>
-  <div id="hud-mission"></div>
-  <canvas id="minimap" width="188" height="188" aria-label="Minimap of Solmar Bay"></canvas>
-  <div id="banner"></div>
-  <div id="toast"></div>
-  <div id="hud-help">WASD move / drive · E enter car · F punch · 1 pistol, click to shoot · Shift sprint · Space handbrake · M mute · Esc pause</div>
+  <div id="hud-bottom-center">
+    <div id="hud-objective">Meet Tia Sol at Cafe Alba</div>
+    <div id="hud-subtitle"></div>
+    <div id="hud-prompt" style="display:none"></div>
+  </div>
+  <div id="hud-crosshair" style="display:none">+</div>
+  <div id="hud-banner" style="display:none">
+    <div id="hud-banner-title"></div>
+    <div id="hud-banner-sub"></div>
+  </div>
+  <div id="hud-toast" style="display:none"></div>
 </div>
 
-<div id="menu-start" class="menu hidden">
+<div id="menu-start" class="menu">
   <div class="menu-card">
-    <h1 id="menu-start-title">SOLMAR BAY</h1>
-    <p class="tagline">A sun-soaked coastal city. One courier. One last favour.</p>
-    <p class="story">Jax Moreno owes the fixer Tia Sol a debt. Six jobs stand between him and a clean slate — a stolen coupe, a sunset delivery, and the Solmar Score at Bay Trust Bank. Steal cars, outrun the Solmar PD, and mind the wanted stars.</p>
-    <div class="controls">
-      <span><b>WASD</b> move / drive</span><span><b>E</b> enter &amp; steal cars</span>
-      <span><b>F</b> punch</span><span><b>1 + click</b> pistol</span>
-      <span><b>Shift</b> sprint</span><span><b>Space</b> handbrake</span>
-      <span><b>Mouse drag</b> camera</span><span><b>Esc</b> pause</span>
-    </div>
-    <button id="btn-start" class="big">▶ New game</button>
-    <button id="btn-continue" class="big secondary hidden">Continue — pick up where you left off</button>
-    <p class="fine">Progress saves automatically. Original game — no Rockstar content.</p>
+    <h1>MARISOL HEAT</h1>
+    <p class="tagline">Heli pursuit &middot; Radio &middot; Respray &middot; 6 story missions</p>
+    <p class="story">Riko Vale is back in Marisol Bay. Tia Sol has a job at the Bay Trust Bank,
+    the police have a helicopter, and the sunset has never looked this good.
+    Steal cars, lose the heat, and get rich — or get busted trying.</p>
+    <button id="btn-new">NEW GAME</button>
+    <button id="btn-continue">CONTINUE</button>
+    <button id="btn-quality">Quality: HIGH</button>
+    <p class="controls">WASD move / drive &middot; E enter car &middot; Space handbrake &middot; Click shoot &middot;
+    F punch &middot; R radio &middot; 1/2 weapons &middot; P photo mode &middot; H hide HUD &middot; T time of day &middot; M mute</p>
+    <p class="fine">A complete open world: 4 districts, traffic that stops at red lights,
+    witnesses who call the police, a helicopter you can shoot down, a respray
+    garage, a gun shop, slots at the Lucky Gull, and street races. 100% offline.</p>
   </div>
 </div>
 
-<div id="menu-pause" class="menu hidden">
+<div id="menu-pause" class="menu" style="display:none">
   <div class="menu-card">
-    <h1>Paused</h1>
-    <p class="story">Solmar Bay waits for no one — except right now.</p>
-    <button id="btn-resume" class="big">▶ Resume</button>
-    <button id="btn-restart" class="big secondary">Restart from scratch</button>
+    <h1>PAUSED</h1>
+    <button id="btn-resume">RESUME</button>
+    <button id="btn-save">SAVE &amp; RESUME</button>
+    <button id="btn-restart">RESTART</button>
   </div>
 </div>
 
-<div id="menu-busted" class="menu hidden">
+<div id="menu-over" class="menu" style="display:none">
   <div class="menu-card">
-    <h1>BUSTED</h1>
-    <p class="story">The Solmar PD caught up with Jax. He posts bail, loses $200, and walks out of Solmar Clinic ready to try again.</p>
-    <button id="btn-busted" class="big">▶ Walk out of the clinic</button>
+    <h1>WASTED</h1>
+    <button id="btn-restart">TRY AGAIN</button>
   </div>
 </div>
 
-<div id="menu-complete" class="menu hidden">
+<div id="menu-complete" class="menu" style="display:none">
   <div class="menu-card">
-    <h1>THE SOLMAR SCORE</h1>
-    <p class="story">Six jobs done. The vault cash is yours and the city is yours to roam. Final take: <b id="menu-complete-cash">$0</b></p>
-    <button id="btn-continue-free" class="big">▶ Keep roaming Solmar Bay</button>
-    <button id="btn-again" class="big secondary">Play the story again</button>
+    <h1>THE MARISOL SCORE — DONE</h1>
+    <p class="story">All 6 missions complete. Marisol Bay is yours, Riko.</p>
+    <button id="btn-restart">FREE ROAM AGAIN</button>
   </div>
 </div>
 
-<p id="status" role="status" aria-live="polite"></p>
-<script type="module" src="./src/main.js"></script>
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
