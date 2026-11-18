@@ -1,8 +1,9 @@
 // MARISOL HEAT — tools/shots.js
 // Screenshot session: stages each of the 4 scenes (plus camera variants for
-// the cover and the vista), waits for the world to settle, and saves 960x540
+// the cover and the vista), waits for the world to settle, and saves 1280x720
 // PNG candidates to /tmp/gta6-shots/. The maker then picks the best 4 and
-// converts them to JPEGs in screenshots/ (see README).
+// converts them to JPEGs in screenshots/ (see README). 1280x720 is the kit's
+// ceiling (RULES.txt: long side at most 1280, short side at least 480).
 // Usage: node tools/shots.js
 import http from "node:http";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
@@ -27,7 +28,7 @@ const browser = await chromium.launch({
   executablePath: exe,
   args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
 });
-const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
@@ -37,9 +38,11 @@ await page.evaluate(() => window.__game.start());
 await page.waitForTimeout(1500);
 
 const takes = [
-  { scene: "cover", tag: "a", frameCar: [2.5, 14, 5] },
-  { scene: "cover", tag: "b", frameCar: [3.6, 14, 5] },
-  { scene: "cover", tag: "c", frameCar: [2.5, 18, 7] },
+  // Cover is staged by the scene itself (wide shot down road x=28, camera
+  // south looking north) — no frameCar reframe, which would lose the heli.
+  { scene: "cover", tag: "a" },
+  { scene: "cover", tag: "b", photo: [40, 7, 66, 0.35, 0.14] },
+  { scene: "cover", tag: "c", photo: [24, 4, 58, -0.15, 0.2] },
   { scene: "city", tag: "a" },
   { scene: "city", tag: "b", photo: [90, 30, 110, 0.9, -0.22] },
   { scene: "mission", tag: "a" },
@@ -59,7 +62,7 @@ for (const t of takes) {
   }
   const buf = await page.screenshot({ path: join(outDir, `${t.scene}-${t.tag}.png`) });
   const dbg = await page.evaluate(() => window.__game.debug());
-  console.log(`${t.scene}-${t.tag}.png bytes=${buf.length} wanted=${dbg.wanted} cruisers=${dbg.cruisers} heli=${dbg.heli} drawCalls=${dbg.drawCalls}`);
+  console.log(`${t.scene}-${t.tag}.png bytes=${buf.length} wanted=${dbg.wanted} cruisers=${dbg.cruisers} swat=${dbg.swat} heli=${dbg.heli} drawCalls=${dbg.drawCalls}`);
 }
 console.log("errors:", JSON.stringify(errors));
 await browser.close();
