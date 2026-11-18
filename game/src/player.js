@@ -7,7 +7,7 @@ import { CONFIG } from "./config.js";
 import { clamp, dist } from "./util.js";
 import { collideBuildings } from "./city.js";
 
-function buildPersonMesh(scene, shirt, pants, skin, scale = 1) {
+export function buildPersonMesh(scene, shirt, pants, skin, scale = 1) {
   const g = new THREE.Group();
   const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85 });
   const legL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.8, 0.24), mat(pants));

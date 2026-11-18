@@ -21,6 +21,7 @@ const CAR_TYPES = [
 ];
 const MAX_CARS = 40;
 const MAX_POLICE = 8;
+const MAX_SWAT = 4;
 
 const _m = new THREE.Matrix4();
 const _q = new THREE.Quaternion();
@@ -76,7 +77,15 @@ export function createVehicles(scene, city, rng, blobs, particles) {
   const plateIM = new THREE.InstancedMesh(
     new THREE.PlaneGeometry(1.6, 0.4),
     new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }), MAX_POLICE);
-  for (const im of [bodyIM, cabinIM, wheelIM, frontIM, rearIM, doorIM, redIM, blueIM, plateIM]) {
+  // SWAT extras: black armored roof box + amber light bar. A SWAT interceptor
+  // is a Truck body in near-black armor, not a navy cruiser with white doors.
+  const swatRoofIM = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(1.4, 0.5, 2.0),
+    new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.55, metalness: 0.5 }), MAX_SWAT);
+  const swatBarIM = new THREE.InstancedMesh(
+    new THREE.BoxGeometry(0.9, 0.18, 0.35),
+    new THREE.MeshBasicMaterial({ color: 0xffb020 }), MAX_SWAT);
+  for (const im of [bodyIM, cabinIM, wheelIM, frontIM, rearIM, doorIM, redIM, blueIM, plateIM, swatRoofIM, swatBarIM]) {
     im.castShadow = true;
     im.frustumCulled = false;
     scene.add(im);
@@ -86,6 +95,7 @@ export function createVehicles(scene, city, rng, blobs, particles) {
 
   const freeIdx = Array.from({ length: MAX_CARS }, (_, i) => i).reverse();
   const freePolice = Array.from({ length: MAX_POLICE }, (_, i) => i).reverse();
+  const freeSwat = Array.from({ length: MAX_SWAT }, (_, i) => i).reverse();
 
   function syncCar(car) {
     const i = car.idx, t = car.type;
@@ -99,7 +109,12 @@ export function createVehicles(scene, city, rng, blobs, particles) {
       composePart(wheelIM, i * 4 + k, car.x, 0.38, car.z, car.angle, 1, 1, 1, sx, sz);
     }
     blobs.set(2 + i, car.x, car.z, t.wid + 1, t.len + 1, car.angle);
-    if (car.isPolice && car.pIdx !== undefined) {
+    if (car.isSwat && car.sIdx !== undefined) {
+      // armored roof box + amber bar, instead of the cruiser's white doors
+      const s = car.sIdx;
+      composePart(swatRoofIM, s, car.x, 1.55, car.z, car.angle, 1, 1, 1, 0, -t.len * 0.05);
+      composePart(swatBarIM, s, car.x, 1.9, car.z, car.angle, 1, 1, 1, 0, 0);
+    } else if (car.isPolice && car.pIdx !== undefined) {
       const p = car.pIdx;
       composePart(doorIM, p, car.x, 0.7, car.z, car.angle, t.wid + 0.02, 1, t.len * 0.55);
       composePart(redIM, p, car.x, 1.75, car.z, car.angle, 1, 1, 1, -0.35, 0);
@@ -115,7 +130,10 @@ export function createVehicles(scene, city, rng, blobs, particles) {
     if (car.pIdx !== undefined) {
       for (const im of [doorIM, redIM, blueIM, plateIM]) im.setMatrixAt(car.pIdx, HIDDEN);
     }
-    for (const im of [bodyIM, cabinIM, wheelIM, frontIM, rearIM, doorIM, redIM, blueIM, plateIM]) im.instanceMatrix.needsUpdate = true;
+    if (car.sIdx !== undefined) {
+      for (const im of [swatRoofIM, swatBarIM]) im.setMatrixAt(car.sIdx, HIDDEN);
+    }
+    for (const im of [bodyIM, cabinIM, wheelIM, frontIM, rearIM, doorIM, redIM, blueIM, plateIM, swatRoofIM, swatBarIM]) im.instanceMatrix.needsUpdate = true;
   }
 
   function spawnCar(x, z, angle, type, color, opts = {}) {
@@ -123,9 +141,13 @@ export function createVehicles(scene, city, rng, blobs, particles) {
     if (idx === undefined) return null;
     const car = {
       idx, x, z, angle, speed: 0, type, color, station: rng.int(0, 2),
-      isPolice: !!opts.police, isPlayer: !!opts.player, damage: 0,
+      isPolice: !!opts.police, isSwat: !!opts.swat, isPlayer: !!opts.player, damage: 0,
       targetSpeed: 0, ai: !!opts.ai, dead: false,
-      pIdx: opts.police ? freePolice.pop() : undefined,
+      // A driven traffic car has a driver to pull out; parked cars, the hero
+      // coupe and police units do not.
+      hasDriver: !!opts.ai && !opts.police,
+      pIdx: opts.police && !opts.swat ? freePolice.pop() : undefined,
+      sIdx: opts.swat ? freeSwat.pop() : undefined,
     };
     bodyIM.setColorAt(idx, _col.setHex(color));
     if (bodyIM.instanceColor) bodyIM.instanceColor.needsUpdate = true;
@@ -166,10 +188,16 @@ export function createVehicles(scene, city, rng, blobs, particles) {
     spawnPoliceCar(x, z) {
       return spawnCar(x, z, 0, CAR_TYPES[0], POLICE_COLOR, { police: true, ai: true });
     },
+    // SWAT interceptor: a Truck body in near-black armor with an amber bar —
+    // longer, heavier and faster than a cruiser, spawned only at 5 stars.
+    spawnSwatCar(x, z) {
+      return spawnCar(x, z, 0, CAR_TYPES[3], 0x0d0d10, { police: true, swat: true, ai: true });
+    },
     removeCar(car) {
       hideCar(car);
       freeIdx.push(car.idx);
       if (car.pIdx !== undefined) freePolice.push(car.pIdx);
+      if (car.sIdx !== undefined) freeSwat.push(car.sIdx);
       const i = cars.indexOf(car); if (i >= 0) cars.splice(i, 1);
     },
     setCarColor(car, color) {
@@ -183,6 +211,11 @@ export function createVehicles(scene, city, rng, blobs, particles) {
       blueIM.setColorAt(car.pIdx, _col.setHex(redOn ? 0x000055 : 0x1a5aff));
       if (redIM.instanceColor) redIM.instanceColor.needsUpdate = true;
       if (blueIM.instanceColor) blueIM.instanceColor.needsUpdate = true;
+    },
+    setSwatStrobe(car, on) {
+      if (car.sIdx === undefined) return;
+      swatBarIM.setColorAt(car.sIdx, _col.setHex(on ? 0xffb020 : 0x4a2c00));
+      if (swatBarIM.instanceColor) swatBarIM.instanceColor.needsUpdate = true;
     },
     placeCar(car, x, z, angle, speed) {
       car.x = x; car.z = z; car.angle = angle; car.speed = speed;

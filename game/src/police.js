@@ -27,11 +27,11 @@ function buildHeli(scene) {
   const blade2 = blade.clone(); blade2.rotation.y = Math.PI / 2; rotor.add(blade2);
   rotor.position.y = 1.1; g.add(rotor);
   // spotlight cone + pool (visible at night, dramatic at golden hour)
-  const spot = new THREE.SpotLight(0xfff2c0, 0, 90, 0.35, 0.5, 1.2);
+  const spot = new THREE.SpotLight(0xfff2c0, 0, 90, 0.28, 0.5, 1.2);
   spot.position.set(0, -0.5, 0);
   g.add(spot);
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(6, 26, 12, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(3.2, 26, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false }));
   cone.rotation.x = Math.PI; cone.position.y = -13; g.add(cone);
   g.userData = { rotor, spot, cone };
   scene.add(g);
@@ -43,13 +43,20 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
     wanted: 0, searching: false, searchTimer: 0, decayTimer: 0,
     lastKnown: { x: 0, z: 0 }, bustTimer: 0, swapGrace: 0,
     cruisers: [], officers: [], roadblocks: [], heli: null, heliHp: 0, heliDown: false,
-    heliAlt: null, // shot staging override (cover scene): hover altitude; null = gameplay default 42
+    // SWAT interceptors: black armored trucks, only at 5 stars (see syncUnits).
+    swat: [],
   };
 
   function spawnCruiser(x, z) {
     const c = vehicles.spawnPoliceCar(x, z);
     c.ai = true;
     state.cruisers.push(c);
+    return c;
+  }
+  function spawnSwat(x, z) {
+    const c = vehicles.spawnSwatCar(x, z);
+    c.ai = true;
+    state.swat.push(c);
     return c;
   }
   function spawnOfficer(x, z) {
@@ -96,13 +103,24 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
 
   function syncUnits() {
     const w = state.wanted;
-    const wantCruisers = w >= 5 ? 4 : w >= 3 ? 3 : w;
+    // At 5 stars the 4th cruiser is replaced by a SWAT interceptor: 3 navy
+    // cruisers + 1 black armored truck, not 4 identical cruisers.
+    const wantCruisers = w >= 5 ? 3 : w >= 3 ? 3 : w;
+    const wantSwat = w >= 5 ? 1 : 0;
     while (state.cruisers.length < wantCruisers) {
       const a = rng.range(0, Math.PI * 2);
       spawnCruiser(state.lastKnown.x + Math.sin(a) * 45, state.lastKnown.z + Math.cos(a) * 45);
     }
     while (state.cruisers.length > wantCruisers) {
       const c = state.cruisers.pop();
+      vehicles.removeCar(c);
+    }
+    while (state.swat.length < wantSwat) {
+      const a = rng.range(0, Math.PI * 2);
+      spawnSwat(state.lastKnown.x + Math.sin(a) * 45, state.lastKnown.z + Math.cos(a) * 45);
+    }
+    while (state.swat.length > wantSwat) {
+      const c = state.swat.pop();
       vehicles.removeCar(c);
     }
     const wantOfficers = w >= 2 ? 2 : w >= 1 ? 1 : 0;
@@ -115,7 +133,9 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
       scene.remove(o.mesh);
       blobs.hide(90 + state.officers.length);
     }
-    // helicopter from 3 stars
+    // helicopter from 3 stars — but never right after one was shot down:
+    // heliDown stays true until wanted falls below 3, so a crash at 5 stars
+    // does not instantly respawn a fresh heli at 4 stars.
     if (w >= 3 && !state.heli && !state.heliDown) {
       state.heli = buildHeli(scene);
       state.heliHp = 3;
@@ -124,8 +144,8 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
     if (w < 3 && state.heli) {
       scene.remove(state.heli);
       state.heli = null;
-      state.heliAlt = null; // never leak a staged altitude into live play
     }
+    if (w < 3) state.heliDown = false;
     // roadblocks from 4 stars, cleared below
     if (w >= 4 && state.roadblocks.length === 0) {
       spawnRoadblock(state.lastKnown.x + 40, state.lastKnown.z, Math.PI / 2);
@@ -172,8 +192,10 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
         }
       }
       if (state.swapGrace > 0) state.swapGrace -= dt;
-      // cruisers: intercept with lead + fan-out (they do not stack on one point)
-      state.cruisers.forEach((c, i) => {
+      // cruisers + SWAT interceptors: intercept with lead + fan-out (they do
+      // not stack on one point). SWAT is faster and rams harder.
+      const units = [...state.cruisers, ...state.swat];
+      units.forEach((c, i) => {
         const tx = state.searching ? state.lastKnown.x : playerPos.x;
         const tz = state.searching ? state.lastKnown.z : playerPos.z;
         const lead = 0.35;
@@ -182,17 +204,18 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
         const want = Math.atan2(px - c.x, pz - c.z);
         const diff = ((want - c.angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
         c.angle += clamp(diff, -2.2 * dt, 2.2 * dt);
-        const top = w >= 5 ? 34 : 28;
+        const top = c.isSwat ? CONFIG.SWAT_TOP_SPEED : w >= 5 ? 34 : 28;
         c.speed = Math.min(c.speed + 16 * dt, top);
         c.x += Math.sin(c.angle) * c.speed * dt;
         c.z += Math.cos(c.angle) * c.speed * dt;
         vehicles.placeCar(c, c.x, c.z, c.angle, c.speed);
-        // strobe the light bar (instanced red/blue, toggled per frame)
-        vehicles.setPoliceStrobe(c, Math.floor(performance.now() / 130) % 2 === 0);
-        // ram the player car
+        // strobe the light bar (instanced red/blue for cruisers, amber for SWAT)
+        if (c.isSwat) vehicles.setSwatStrobe(c, Math.floor(performance.now() / 130) % 2 === 0);
+        else vehicles.setPoliceStrobe(c, Math.floor(performance.now() / 130) % 2 === 0);
+        // ram the player car (SWAT hits harder)
         const d = dist(c.x, c.z, playerPos.x, playerPos.z);
         if (d < 3.2 && playerPos.inCar) {
-          playerPos.damageCar(6 * dt);
+          playerPos.damageCar((c.isSwat ? CONFIG.SWAT_RAM : 6) * dt);
           if (Math.random() < 0.1) particles.burst(c.x, 1, c.z, 4, [1, 0.8, 0.3], 3, 0.5, 2);
         }
       });
@@ -231,7 +254,8 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
             audio.crash();
             scene.remove(h);
             state.heli = null;
-            state.heliDown = false;
+            // heliDown is NOT cleared here: it stays true until wanted falls
+            // below 3, or syncUnits would respawn a heli at 4 stars at once.
             setWanted(Math.max(0, w - 1));
           }
           return null;
@@ -240,7 +264,7 @@ export function createPolice(scene, city, vehicles, rng, blobs) {
         const tz = state.searching ? state.lastKnown.z : playerPos.z;
         h.position.x += (tx - h.position.x) * Math.min(1, dt * 0.7);
         h.position.z += (tz - h.position.z) * Math.min(1, dt * 0.7);
-        h.position.y = (state.heliAlt ?? 42) + Math.sin(performance.now() / 900) * 2;
+        h.position.y = 42 + Math.sin(performance.now() / 900) * 2;
         h.userData.rotor.rotation.y += dt * 32;
         h.userData.spot.target.position.set(tx - h.position.x, -42, tz - h.position.z);
         h.userData.spot.target.updateMatrixWorld();

@@ -30,7 +30,7 @@ void main(){
   vec2 uv = vUv;
   vec3 c = texture2D(tDiffuse, uv).rgb;
   // selective bloom: 9-tap blur of only the HDR brights (threshold ~1.6 linear)
-  vec2 texel = vec2(1.0/960.0, 1.0/540.0);
+  vec2 texel = vec2(1.0/1280.0, 1.0/720.0);
   vec3 bloom = vec3(0.0);
   for(int i=-1;i<=1;i++) for(int j=-1;j<=1;j++){
     vec3 s = texture2D(tDiffuse, uv + vec2(float(i),float(j))*texel*3.0).rgb;

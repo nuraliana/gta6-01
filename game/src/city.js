@@ -266,6 +266,11 @@ export function buildCity(scene, rng) {
   namedBox("cafeAlba", 22, 9, 16, 0xf2c29b, 14, 3.5, 7.5);
   const awning = new THREE.Mesh(new THREE.BoxGeometry(22, 0.5, 5), new THREE.MeshStandardMaterial({ color: 0xff7a2a, roughness: 0.7 }));
   awning.position.set(CONFIG.PLACES.cafeAlba.x, 4.6, CONFIG.PLACES.cafeAlba.z - 10); scene.add(awning);
+  // Warm storefront glow over the cafe tables: at night it lights Riko, Tia
+  // and the pavement in front of the sign; by day it is a faint warm wash.
+  const cafeGlow = new THREE.PointLight(0xff9e4a, 35, 22, 1.8);
+  cafeGlow.position.set(CONFIG.PLACES.cafeAlba.x, 5, CONFIG.PLACES.cafeAlba.z - 12);
+  scene.add(cafeGlow);
   const tableGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.15, 10);
   tableGeo.translate(0, 1.1, 0);
   const tableIM = new THREE.InstancedMesh(tableGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }), 3);

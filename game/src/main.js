@@ -120,8 +120,19 @@ window.__game = {
     world.state.photo = false;
     world.state.camYaw = yaw; world.state.camPitch = pitch; world.state.camDist = dist;
   },
-  // Frame the player's car from behind-side in photo mode, computed from
-  // the car's live position (it keeps driving while the shot is staged).
+  // Test hook for the carjack playtest: put Riko on foot next to the nearest
+  // driven traffic car (one with a driver to pull out) and return its spot.
+  jackSetup() {
+    const p = world.player.state;
+    const car = world.vehicles.cars.find((c) => c.hasDriver && !c.isPolice);
+    if (!car) return null;
+    car.speed = 0; car.targetSpeed = 0; // hold it still for the test press
+    if (p.inCar) { world.player.exitCar(world.vehicles); }
+    p.x = car.x + 3; p.z = car.z;
+    p.mesh.visible = true;
+    p.mesh.position.set(p.x, 0, p.z);
+    return { x: car.x, z: car.z, hasDriver: car.hasDriver, type: car.type.name };
+  },
   frameCar(angOff = 0.6, dist = 16, height = 6) {
     const p = world.player.state, c = p.inCar;
     if (!c) return false;

@@ -21,6 +21,8 @@ export const CONFIG = {
   WITNESS_DELAY_S: 2.5,
   BUST_TIME_S: 2,
   BUST_FINE: 200,
+  SWAT_TOP_SPEED: 38, // SWAT interceptor: faster than a 5* cruiser (34)
+  SWAT_RAM: 10, // SWAT ram damage per second (cruiser: 6)
   // Economy
   RESPRAY_COST: 250,
   AMMO_COST: 50,

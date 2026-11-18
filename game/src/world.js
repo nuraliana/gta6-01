@@ -16,6 +16,7 @@ import { createAudio } from "./audio.js";
 import { createPlayer, buildTia } from "./player.js";
 import { createVehicles } from "./vehicles.js";
 import { createPedestrians } from "./pedestrians.js";
+import { createDrivers } from "./drivers.js";
 import { createPolice } from "./police.js";
 import { createCombat } from "./combat.js";
 import { createMissions } from "./missions.js";
@@ -26,7 +27,7 @@ export function createWorld(canvas) {
   const rng = makeRng(CONFIG.SEED);
   const render = createRenderer(canvas);
   const particles = createParticles(render.scene);
-  const blobs = createBlobShadows(render.scene, 92); // 0 player, 1 Tia, 2-41 cars, 42-89 peds, 90-91 officers
+  const blobs = createBlobShadows(render.scene, 98); // 0 player, 1 Tia, 2-41 cars, 42-89 peds, 90-91 officers, 92-97 pulled-out drivers
   const city = buildCity(render.scene, rng);
   const input = createInput(canvas);
   const audio = createAudio();
@@ -37,6 +38,7 @@ export function createWorld(canvas) {
   const vehicles = createVehicles(render.scene, city, rng, blobs, particles);
   const peds = createPedestrians(render.scene, city, rng, blobs);
   const police = createPolice(render.scene, city, vehicles, rng, blobs);
+  const drivers = createDrivers(render.scene, city, blobs);
   const combat = createCombat(render.scene, particles, audio);
   const missions = createMissions(render.scene, city, tia);
 
@@ -164,6 +166,14 @@ export function createWorld(canvas) {
     audio.startRadio();
     audio.setStation(car.station);
     hud.setRadio(audio.station());
+    // Carjacking a driven traffic car pulls the driver out onto the street:
+    // they step out of the driver's side and run. A stolen car stops being
+    // traffic AI the moment Riko takes the wheel.
+    if (car.hasDriver) {
+      drivers.spawnDriver(car.x, car.z, car.angle, player.state.x, player.state.z);
+      car.hasDriver = false;
+    }
+    car.ai = false;
     // stealing a car in front of witnesses gets reported (2.5 s delay)
     const seen = peds.witnessCrime(car.x, car.z);
     if (seen) {
@@ -246,6 +256,7 @@ export function createWorld(canvas) {
     // systems
     vehicles.updateTraffic(dt, city.trafficLights);
     vehicles.updateTrafficLights(dt);
+    drivers.update(dt);
     const danger = shooting ? { x: px, z: pz, r: 24 } : null;
     peds.update(dt, danger);
     // witness calls that finished -> star rises now
@@ -327,7 +338,7 @@ export function createWorld(canvas) {
   setTimePreset("golden");
 
   return {
-    state, render, city, player, vehicles, peds, police, combat, missions, economy: economy2, hud, audio, input, particles,
+    state, render, city, player, vehicles, peds, police, drivers, combat, missions, economy: economy2, hud, audio, input, particles,
     start() { state.running = true; state.paused = false; state.shotMode = false; audio.unlock(); audio.startRadio(); },
     pause(v) { state.paused = v; },
     save, load, setTimePreset,
@@ -341,6 +352,7 @@ export function createWorld(canvas) {
         searching: police.state.searching, drawCalls: state.debug.drawCalls,
         player: { x: player.state.x, z: player.state.z, inCar: !!player.state.inCar },
         cruisers: police.state.cruisers.length, heli: !!police.state.heli,
+        swat: police.state.swat.length, drivers: drivers.info(),
         peds: peds.peds.length, traffic: vehicles.cars.length,
       };
     },
