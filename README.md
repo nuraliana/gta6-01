@@ -1,83 +1,91 @@
-# Solmar Bay
+# MARISOL HEAT — Heli Pursuit, Radio & Respray
 
-[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/badge/gta6-01/nuraliana/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/badge/gta6-01/nuraliana/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Plays offline](https://img.shields.io/badge/plays-offline-brightgreen.svg)](#how-to-play)
-
-A sun-soaked coastal open-world crime game that runs entirely in your browser.
-Explore the city of Solmar Bay on foot or behind the wheel, steal cars, take
-jobs from the fixer Tia Sol, and try not to end up in the back of a Solmar PD
-cruiser.
-
-## The story
-
-Jax Moreno is a courier who owes the fixer Tia Sol one last favour. Six jobs
-stand between him and a clean slate — a stolen coupe, a sunset delivery, and
-the Solmar Score at Bay Trust Bank. Clear the debt and the whole city opens
-up for free roam.
+An open-world crime game in the spirit of GTA 6, built with three.js r160
+(vendored, 100% offline, no network requests). Riko Vale is back in Marisol
+Bay: Tia Sol has a job at the Bay Trust Bank, the police have a helicopter,
+and the sunset has never looked this good.
 
 ## What is in the game
 
-- **An open coastal city** — nine-by-nine streets of stucco buildings, a
-  beach and ocean to the south, and the long Solmar Pier stretching out to sea.
-- **Traffic and pedestrians** — cars cruise the streets and people walk the
-  sidewalks, so the city feels alive even when you are just driving around.
-- **Steal and drive** — walk up to any parked or passing car, take it, and
-  drive it. Sprint on foot, handbrake around corners, and ditch your ride
-  wherever you like.
-- **Wanted level 0–5** — the more heat you attract, the harder the Solmar PD
-  chases you. Break line of sight and lay low until the stars fade.
-- **Six story missions** — meet Tia at Cafe Alba, borrow a gold coupe, make a
-  90-second sunset delivery, shake a three-star manhunt, collect five cash
-  drops, and pull off the bank heist.
-- **Combat** — fists up close, or a pistol when things get loud.
-- **HUD with a live minimap** — cash, health, wanted stars, the time of day,
-  your weapon and ammo, speed, and a minimap that tracks you, your objective,
-  and the police in real time.
-- **Start screen, pause, and save** — progress is stored in localStorage, so
-  you can pick up where you left off. Getting busted costs $200 bail and drops
-  you back at Solmar Clinic.
-- **Synthesized sound** — engine hum, sirens, punches, gunshots, and mission
-  stings, all generated in code. No audio files. Press M to mute.
+- **A city with 4 named districts** — Downtown (glass towers), Beachside
+  (pastel + pier), Port (industrial), Hills (residential) — plus one global
+  landmark, the neon **Marisol Spire**, visible from across the map.
+- **Real places, not markers on empty asphalt**: Cafe Alba (Tia Sol stands
+  outside it), Bay Trust Bank (columns + vault door), Lucky Gull Casino,
+  Quick Coat Garage, Iron & Lead Arms.
+- **Wanted 0–5 that reads**: hollow stars + SEARCHING when the police lose
+  you, witnesses who phone the police 2.5 s after a crime, escalation that
+  changes the UNIT (patrol → roadblocks → helicopter with spotlight →
+  roadblock vans → SWAT interceptors). The helicopter can be shot down.
+  Swapping cars breaks the police description.
+- **6 story missions** (Coffee with Tia, Borrow a Coupe, Sunset Delivery,
+  Lose the Heat, Cash Drops, The Marisol Score) + side jobs: street race,
+  Lucky Gull slots, respray, gun shop. Money has somewhere to go.
+- **Traffic that stops at red lights**, 48 pedestrians who flee gunfire,
+  carjacking that pulls the driver out, car damage (smoke → fire → explosion),
+  handbrake drift with tire smoke.
+- **Radio**: 3 stations (WAVE 88, FUEGO 101, TALK BAY); every car remembers
+  its own station. R cycles, M mutes (gain restored correctly on unmute).
+- **Look**: golden-hour default (17:45), ACES filmic tone mapping, selective
+  HDR bloom (neon / lamps / sun / muzzle flash only), vignette + film grain,
+  one shadowed sun with a tight frustum + blob shadows, canvas-texture
+  facades with lit windows, neon signage.
+- **HUD + live minimap** (roads, districts, police dots, heli ring, mission
+  diamond), start / pause / save (localStorage, autosave every 15 s),
+  photo mode (P: free camera, H: hide HUD, T: time of day).
+- **Deterministic**: seeded RNG (seed 7); two runs build the same city and
+  the same dossier bytes.
 
 ## Controls
 
-| Key / mouse | Action |
-| --- | --- |
-| W A S D / arrow keys | Move on foot / drive |
-| Mouse drag | Rotate the camera |
-| E | Enter or steal a car |
-| F | Punch |
-| 1 | Draw the pistol |
-| Click | Shoot |
-| Shift | Sprint |
-| Space | Handbrake |
-| P or Esc | Pause |
-| M | Mute |
+WASD move / drive · E enter or steal car · Space handbrake · Click shoot ·
+F punch · R radio · 1/2 weapons · P photo mode · H hide HUD · T time of day ·
+M mute · Esc pause.
 
-## How to play
+## Screenshots (the dossier's 4, in order)
 
-No build step, no network, no install. Serve the `game/` folder with any
-static server and open `index.html`:
+1. **1-cover.jpg** — "Five stars. One exit." Chase: hero coupe diagonal,
+   2 cruisers with light bars flanking behind, 5 stars, tire smoke,
+   golden-hour downtown.
+2. **2-city.jpg** — "The city never sleeps." Downtown at sunset, lit
+   windows, palms, streets and the skyline.
+3. **3-mission.jpg** — "Coffee with Tia." Riko + Tia at Cafe Alba in
+   golden hour, CAFE ALBA neon sign overhead, pistol in hand.
+4. **4-vista.jpg** — "Half the frame is sky." Beach golden hour, sun over
+   the ocean, pier diagonal, hero coupe + Riko on the sand.
 
-```bash
-cd game
-python3 -m http.server 8000
-# then open http://localhost:8000 in your browser
+## Play
+
+```sh
+node serve.ts        # http://localhost:8080
 ```
 
-## Tech notes
+## Tests (run in this repo)
 
-Built with [three.js](https://threejs.org/), vendored locally under
-`game/vendor/` so the game works fully offline. The game code is plain
-JavaScript modules under `game/src/` — city, vehicles, pedestrians, police,
-missions, combat, HUD, and audio are each their own file. Screenshots are
-captured deterministically with `?shot=start|play|end&seed=1`.
+```sh
+node tools/gate-check.js    # load, 0 console errors, 0 external requests
+node tools/playtest.js      # autopilot finishes mission 1, cash before -> after
+node tools/shots.js         # 10 candidates -> pick 4, grayscale/blur/168x94 checks
+```
 
-## Originality
+Measured in this session (2026-11-18, headless Chromium 1255 + SwiftShader):
 
-Everything here is original: the city of Solmar Bay, the characters Jax
-Moreno and Tia Sol, the story and mission names, the art, and the sound.
-Nothing is taken from Rockstar Games or the Grand Theft Auto series.
+- **Gate** (`tools/gate-check.js`): PASS — 0 console errors, 0 page
+  errors, 0 failed requests, 0 external requests; canvas non-blank
+  (pixel mean ~35, 107 distinct colors); 48–55 draw calls in the spawn scene.
+- **Playtest** (`tools/playtest.js`): PASS (2 consecutive runs) — autopilot
+  finishes mission 1, cash **$150 → $450 (+$300)**, mission 0 → 1
+  ("Borrow a Coupe"); 0 page errors; 48 pedestrians, 27 traffic cars live.
+- **Screenshots** (`tools/shots.js`): 10 candidates, 0 errors, draw calls
+  37–69 across scenes; finals 960×540 JPEG q80, 51–89 KiB each (limit
+  256 KiB); all 4 pass the grayscale + blur + 168×94 legibility check.
+- **Dossier** (`MAKEFUN_OUTPUT_DIR=out node main.ts`): 520,283 bytes
+  (limit 4 MiB), text 142,434 bytes (limit 163,840), 4 images; two runs
+  byte-identical (sha256
+  5d66ac3a3266787fe2bdb591fa022326fafc2bcdf880d20e7205f126b8b01b9a).
+- **Limits**: `game/` is 22 files, 811,832 bytes (limits: 993 files,
+  48 MiB); `index.html` well under 1 MiB.
+
+## License
+
+MIT — see LICENSE.
