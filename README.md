@@ -1,5 +1,9 @@
 # MARISOL HEAT — Heli Pursuit, Radio & Respray
 
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/nuraliana/gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/nuraliana/gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+
 An open-world crime game in the spirit of GTA 6, built with three.js r160
 (vendored, 100% offline, no network requests). Riko Vale is back in Marisol
 Bay: Tia Sol has a job at the Bay Trust Bank, the police have a helicopter,
