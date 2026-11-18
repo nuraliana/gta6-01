@@ -1,41 +1,77 @@
-// Playtest: load the playtest shot (autopilot walks to the pier) and watch mission 1
-// complete on its own. Verifies the mission flow end to end in a real browser.
-// (The old ?shot=walk scene is now the beach vista; the autopilot staging
-// lives on as ?shot=playtest so this tool keeps working.)
+// MARISOL HEAT — tools/playtest.js
+// Autopilot playtest: start the game, walk to Cafe Alba, talk to Tia (E),
+// and verify mission 1 completes with the right cash delta. Prints the
+// numbers; exits non-zero if mission 1 does not complete.
 // Usage: node tools/playtest.js
-const puppeteer = require('/home/hatch/workspace/makefun/threejs-fps-02/harness/node_modules/puppeteer-core');
-const CHROME = '/home/hatch/.cache/puppeteer/chrome/linux-157.0.8103.50/chrome-linux64/chrome';
-(async () => {
-  const browser = await puppeteer.launch({
-    executablePath: CHROME,
-    headless: 'shell',
-    args: ['--no-sandbox', '--disable-gpu', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=960,540'],
-  });
-  const page = await browser.newPage();
-  await page.setViewport({ width: 960, height: 540 });
-  page.on('pageerror', (e) => console.log('PAGEERROR:', String(e).slice(0, 300)));
-  await page.goto('http://localhost:8091/?shot=playtest&seed=7', { waitUntil: 'domcontentloaded', timeout: 60000 });
+import http from "node:http";
+import { readFile } from "node:fs/promises";
+import { join, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "/tmp/gta6-tools/node_modules/playwright-core/index.mjs";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const gameDir = join(repoRoot, "game");
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
+const server = http.createServer(async (req, res) => {
+  const p = req.url === "/" ? "/index.html" : req.url.split("?")[0];
+  try { const d = await readFile(join(gameDir, decodeURIComponent(p))); res.writeHead(200, { "Content-Type": MIME[extname(p)] ?? "application/octet-stream" }); res.end(d); }
+  catch { res.writeHead(404); res.end("nf"); }
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const port = server.address().port;
+const exe = process.env.HOME + "/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome";
+const browser = await chromium.launch({
+  executablePath: exe,
+  args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+});
+const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+await page.goto(`http://127.0.0.1:${port}/index.html`);
+await page.waitForTimeout(2000);
+await page.evaluate(() => window.__game.start());
+const before = await page.evaluate(() => window.__game.state());
+console.log("before:", JSON.stringify(before));
+
+async function waitFor(fn, timeoutMs, label) {
   const t0 = Date.now();
-  let done = false;
-  while (Date.now() - t0 < 200000) {
-    await new Promise((r) => setTimeout(r, 10000));
-    const s = await page.evaluate(() => {
-      const W = window.__world;
-      if (!W) return null;
-      return {
-        time: +W.time.toFixed(1),
-        missionIndex: W.missionIndex,
-        missionsDone: W.missionsDone,
-        cash: W.cash,
-        px: +W.player.x.toFixed(0), pz: +W.player.z.toFixed(0),
-        objective: document.getElementById('hud-objective')?.textContent,
-        save: !!localStorage.getItem('solmarbay-save-v1'),
-      };
-    });
-    console.log(`t=${Math.round((Date.now() - t0) / 1000)}s`, JSON.stringify(s));
-    if (s && s.missionsDone >= 1) { done = true; break; }
+  while (Date.now() - t0 < timeoutMs) {
+    if (await page.evaluate(fn)) return true;
+    await page.waitForTimeout(300);
   }
-  console.log(done ? 'PLAYTEST OK: mission 1 completed, reward paid' : 'PLAYTEST: mission 1 did NOT complete in time');
-  await browser.close();
-  process.exit(done ? 0 : 1);
-})().catch((e) => { console.error('PLAYTEST FAIL', e); process.exit(1); });
+  console.log("TIMEOUT waiting for", label);
+  return false;
+}
+
+// Mission 1: walk to the Cafe Alba front (56,-70) to trigger step 0,
+// then to Tia (48,-70) and press E to talk.
+const targets = [[56, -70], [48, -70]];
+for (const [tx, tz] of targets) {
+  let arrived = false;
+  for (let i = 0; i < 120 && !arrived; i++) {
+    arrived = await page.evaluate(([x, z]) => window.__game.autopilotTo(x, z, 0.3), [tx, tz]);
+    await page.waitForTimeout(120);
+  }
+  console.log(`autopilot to (${tx},${tz}): arrived=${arrived}`);
+  // Let the game loop run several frames at the target: the mission step
+  // triggers in world.update, which runs on animation frames — at headless
+  // ~2 fps the player would otherwise leave before a frame ever saw it.
+  await page.waitForTimeout(900);
+}
+// Wait for the step-0 trigger to actually fire (frame-rate dependent).
+await waitFor(() => window.__game.debug().objective.startsWith("Talk to Tia"), 15000, "step 1 (Talk to Tia)");
+await page.waitForTimeout(800);
+await page.keyboard.press("KeyE");
+await waitFor(() => window.__game.state().mission === 1, 10000, "mission 1 complete");
+await page.waitForTimeout(1200);
+const after = await page.evaluate(() => window.__game.state());
+const debug = await page.evaluate(() => window.__game.debug());
+console.log("after:", JSON.stringify(after));
+console.log("debug:", JSON.stringify(debug));
+console.log("page errors:", JSON.stringify(errors));
+const pass = after.mission === 1 && after.cash === before.cash + 300;
+console.log(pass ? "PLAYTEST PASS: mission 1 complete, cash +$300" : "PLAYTEST FAIL");
+if (!pass) process.exitCode = 1;
+await browser.close();
+server.close();

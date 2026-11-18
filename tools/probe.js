@@ -1,33 +1,41 @@
-// Quick probe: load one shot URL, dump console/page errors and __shotReady.
-const puppeteer = require('/home/hatch/workspace/makefun/threejs-fps-02/harness/node_modules/puppeteer-core');
-const CHROME = '/home/hatch/.cache/puppeteer/chrome/linux-157.0.8103.50/chrome-linux64/chrome';
-(async () => {
-  const browser = await puppeteer.launch({
-    executablePath: CHROME,
-    headless: 'shell',
-    args: ['--no-sandbox', '--disable-gpu', '--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--window-size=1280,720'],
-  });
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 720 });
-  page.on('pageerror', (e) => console.log('PAGEERROR:', String(e).slice(0, 500)));
-  page.on('console', (m) => console.log('CONSOLE', m.type(), m.text().slice(0, 300)));
-  page.on('requestfailed', (r) => console.log('REQFAIL:', r.url(), r.failure()?.errorText));
-  const url = process.argv[2] || 'http://localhost:8091/?shot=cover&seed=7';
-  console.log('goto', url);
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-  console.log('loaded, waiting 45s...');
-  for (let i = 0; i < 9; i++) {
-    await new Promise((r) => setTimeout(r, 5000));
-    const s = await page.evaluate(() => ({
-      ready: window.__shotReady,
-      errors: window.__gameErrors,
-      hasWorld: !!window.__world,
-      state: window.__world?.state,
-      time: window.__world?.time,
-    })).catch((e) => ({ evalFail: String(e).slice(0, 200) }));
-    console.log(`t=${(i + 1) * 5}s`, JSON.stringify(s));
-    if (s.ready) break;
-  }
-  await browser.close();
-  process.exit(0);
-})().catch((e) => { console.error('PROBE FAIL', e); process.exit(1); });
+// MARISOL HEAT — tools/probe.js
+// Quick state dump: load, start, print __game.debug() + state() as JSON.
+// Usage: node tools/probe.js [shotName]
+import http from "node:http";
+import { readFile } from "node:fs/promises";
+import { join, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "/tmp/gta6-tools/node_modules/playwright-core/index.mjs";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const gameDir = join(repoRoot, "game");
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
+const server = http.createServer(async (req, res) => {
+  const p = req.url === "/" ? "/index.html" : req.url.split("?")[0];
+  try { const d = await readFile(join(gameDir, decodeURIComponent(p))); res.writeHead(200, { "Content-Type": MIME[extname(p)] ?? "application/octet-stream" }); res.end(d); }
+  catch { res.writeHead(404); res.end("nf"); }
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const port = server.address().port;
+const exe = process.env.HOME + "/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome";
+const browser = await chromium.launch({
+  executablePath: exe,
+  args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+});
+const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+await page.goto(`http://127.0.0.1:${port}/index.html`);
+await page.waitForTimeout(2000);
+await page.evaluate(() => window.__game.start());
+await page.waitForTimeout(2000);
+const shot = process.argv[2];
+if (shot) {
+  await page.evaluate((s) => window.__game.shot(s), shot);
+  await page.waitForTimeout(2000);
+}
+console.log(JSON.stringify(await page.evaluate(() => ({ debug: window.__game.debug(), state: window.__game.state() })), null, 2));
+console.log("errors:", JSON.stringify(errors));
+await browser.close();
+server.close();

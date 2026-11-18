@@ -1,77 +1,69 @@
-// Local gate check for the Solmar Bay entry: mirrors the sealed scorer's rows
-// that can be checked offline (game_files, screenshots, dossier_matches shape).
-// Usage: MAKEFUN_OUTPUT_DIR=out node main.ts && node tools/gate-check.js [out]
-const fs = require('fs');
-const path = require('path');
+// MARISOL HEAT — tools/gate-check.js
+// Gate: load the game headless, start it, and verify 0 console errors,
+// 0 pageerrors, 0 failed requests, 0 external requests, non-blank canvas,
+// and report the real draw-call count in the full city scene.
+// Usage: node tools/gate-check.js [url]   (defaults to a local static server)
+import http from "node:http";
+import { readFile } from "node:fs/promises";
+import { join, extname, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { chromium } from "/tmp/gta6-tools/node_modules/playwright-core/index.mjs";
 
-const out = process.argv[2] || 'out';
-const gameDir = path.join(out, 'game');
-const shotDir = path.join(out, 'screenshots');
-let fails = 0;
-const check = (name, ok, detail) => {
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${detail ?? ''}`);
-  if (!ok) fails++;
-};
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const gameDir = join(repoRoot, "game");
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".jpg": "image/jpeg" };
 
-// game_files
-let entries = 0;
-let bytes = 0;
-const walk = (dir) => {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    entries++;
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p);
-    else if (e.isFile()) {
-      bytes += fs.statSync(p).size;
-      if (Buffer.byteLength(path.relative(gameDir, p), 'utf8') > 1000) check('game path length', false, p);
-    } else check('game plain files', false, p);
-  }
-};
-walk(gameDir);
-check('game_files count<=993', entries <= 993, `${entries} entries`);
-check('game_files bytes<=48MiB', bytes <= 48 * 1024 * 1024, `${bytes} bytes`);
-const index = path.join(gameDir, 'index.html');
-check('index.html <=1MiB', fs.existsSync(index) && fs.statSync(index).size <= 1024 * 1024,
-  fs.existsSync(index) ? `${fs.statSync(index).size} bytes` : 'missing');
+const server = http.createServer(async (req, res) => {
+  const p = req.url === "/" ? "/index.html" : req.url.split("?")[0];
+  try {
+    const data = await readFile(join(gameDir, decodeURIComponent(p)));
+    res.writeHead(200, { "Content-Type": MIME[extname(p)] ?? "application/octet-stream" });
+    res.end(data);
+  } catch { res.writeHead(404); res.end("nf"); }
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const port = server.address().port;
 
-// screenshots
-const shots = fs.readdirSync(shotDir).filter((f) => !f.startsWith('.')).sort();
-check('screenshots count 3-4', shots.length >= 3 && shots.length <= 4, `${shots.length}: ${shots.join(', ')}`);
-for (const s of shots) {
-  const p = path.join(shotDir, s);
-  const buf = fs.readFileSync(p);
-  const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
-  const isPng = buf[0] === 0x89 && buf[1] === 0x50;
-  let w = 0, h = 0;
-  if (isJpeg) {
-    // Parse SOF markers for dimensions.
-    let i = 2;
-    while (i < buf.length - 1) {
-      if (buf[i] !== 0xff) { i++; continue; }
-      const marker = buf[i + 1];
-      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
-        h = buf.readUInt16BE(i + 5);
-        w = buf.readUInt16BE(i + 7);
-        break;
-      }
-      i += 2 + buf.readUInt16BE(i + 2);
-    }
-  } else if (isPng) {
-    w = buf.readUInt32BE(16);
-    h = buf.readUInt32BE(20);
-  }
-  check(`shot ${s} jpeg/png <=256KiB`, (isJpeg || isPng) && buf.length <= 262144, `${buf.length} bytes`);
-  check(`shot ${s} dims`, Math.max(w, h) <= 1280 && Math.min(w, h) >= 480, `${w}x${h}`);
-}
+const exe = process.env.HOME + "/.cache/ms-playwright/chromium-1255/chrome-linux64/chrome";
+const browser = await chromium.launch({
+  executablePath: exe,
+  args: ["--no-sandbox", "--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
+});
+const page = await browser.newPage({ viewport: { width: 960, height: 540 } });
+const errors = [], pageErrors = [], failed = [], external = [];
+page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
+page.on("pageerror", (e) => pageErrors.push(String(e)));
+page.on("requestfailed", (r) => failed.push(r.url() + " :: " + (r.failure()?.errorText ?? "")));
+page.on("request", (r) => {
+  const u = r.url();
+  if (!u.startsWith("http://127.0.0.1") && !u.startsWith("data:") && !u.startsWith("blob:")) external.push(u);
+});
 
-// dossier
-const dossier = JSON.parse(fs.readFileSync(path.join(out, 'dossier.json'), 'utf8'));
-check('dossier schema', dossier.schema === 'makefun/dossier/v1', dossier.schema);
-check('dossier <=1.5MiB', fs.statSync(path.join(out, 'dossier.json')).size <= 1.5 * 1024 * 1024,
-  `${fs.statSync(path.join(out, 'dossier.json')).size} bytes`);
-check('dossier text <=160KiB', Buffer.byteLength(dossier.text, 'utf8') <= 163840,
-  `${Buffer.byteLength(dossier.text, 'utf8')} bytes`);
-check('dossier images', Array.isArray(dossier.images) && dossier.images.length === shots.length,
-  `${(dossier.images || []).length} images`);
-console.log(fails === 0 ? 'GATE-CHECK OK' : `GATE-CHECK FAILED: ${fails}`);
-process.exit(fails === 0 ? 0 : 1);
+await page.goto(`http://127.0.0.1:${port}/index.html`);
+await page.waitForTimeout(2500);
+const hasGame = await page.evaluate(() => !!window.__game);
+if (!hasGame) { console.log("FAIL: window.__game missing"); process.exitCode = 1; }
+await page.evaluate(() => window.__game.start());
+await page.waitForTimeout(5000);
+// drive a little so traffic/peds/police tick
+await page.keyboard.down("KeyW");
+await page.waitForTimeout(2500);
+await page.keyboard.up("KeyW");
+const debug = await page.evaluate(() => window.__game.debug());
+await page.screenshot({ path: "/tmp/gta6-shots/gate.png" });
+const pixels = await page.evaluate(() => {
+  const c = document.getElementById("game");
+  const g = document.createElement("canvas"); g.width = 96; g.height = 54;
+  const ctx = g.getContext("2d"); ctx.drawImage(c, 0, 0, 96, 54);
+  const d = ctx.getImageData(0, 0, 96, 54).data;
+  let sum = 0, distinct = new Set();
+  for (let i = 0; i < d.length; i += 4) { sum += d[i] + d[i + 1] + d[i + 2]; distinct.add((d[i] >> 4) + "," + (d[i + 1] >> 4) + "," + (d[i + 2] >> 4)); }
+  return { mean: sum / (96 * 54 * 3), distinct: distinct.size };
+});
+console.log(JSON.stringify({ errors, pageErrors, failed, external, debug, pixels }, null, 2));
+const ok = errors.length === 0 && pageErrors.length === 0 && failed.length === 0 && external.length === 0
+  && pixels.mean > 8 && pixels.distinct > 40;
+console.log(ok ? "GATE PASS" : "GATE FAIL");
+if (!ok) process.exitCode = 1;
+await browser.close();
+server.close();
