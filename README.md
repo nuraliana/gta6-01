@@ -9,6 +9,26 @@ An open-world crime game in the spirit of GTA 6, built with three.js r160
 Bay: Tia Sol has a job at the Bay Trust Bank, the police have a helicopter,
 and the sunset has never looked this good.
 
+**Wanted is a system, not a number.** Every crime is seen first and punished
+later: a pedestrian who watches you steal a car or fire a shot pulls out a
+phone, and the star only rises 2.5 seconds after the call — so a quiet alley
+is safer than a crowded avenue. Stars 0–5 change what hunts you, not just how
+many: foot patrol and 1 cruiser, then roadblocks, then a helicopter with a
+spotlight at 3 stars, roadblock vans at 4, and at 5 stars a black armored
+SWAT interceptor — faster than any cruiser and twice as hard a ram — joins
+the chase. Break line of sight and the stars go hollow with a SEARCHING
+label while cruisers converge on your last-known position; swap cars and the
+police description goes stale, so wanted decays twice as fast. The helicopter
+can be shot down in 3 hits (+$200 scrap bounty) and stays down until the heat
+falls below 3 stars; get caught on foot and it is a $200 fine.
+
+**Money has somewhere to go.** Missions pay $300–$1,200, a street race pays
+$400, and every dollar can be spent: respray $250 (drops 2 stars), ammo $50,
+armor $150, an SMG $800, Lucky Gull slots $50 a spin. The loop is the game:
+earn heat doing jobs, spend cash to shed heat, and keep enough in hand for
+the next job's buy-in — going broke with 5 stars and a smoking engine is
+how runs end.
+
 ## What is in the game
 
 - **A city with 4 named districts** — Downtown (glass towers), Beachside
@@ -48,15 +68,18 @@ M mute · Esc pause.
 
 ## Screenshots (the dossier's 4, in order)
 
-1. **1-cover.jpg** — "Five stars. One exit." Chase: hero coupe diagonal,
-   2 cruisers with light bars flanking behind, 5 stars, tire smoke,
-   golden-hour downtown.
+1. **1-cover.jpg** — "Five stars. One exit." Chase: hero coupe mid-frame,
+   2 cruisers with light bars, a black SWAT interceptor cutting in, the
+   police helicopter with its spotlight cone overhead, 5 stars, tire smoke,
+   golden-hour downtown. Staged through live gameplay state only — no
+   visual overrides.
 2. **2-city.jpg** — "The city never sleeps." Downtown at sunset, lit
    windows, palms, streets and the skyline.
-3. **3-mission.jpg** — "Coffee with Tia." Riko + Tia at Cafe Alba in
-   golden hour, CAFE ALBA neon sign overhead, pistol in hand.
+3. **3-mission.jpg** — "Coffee with Tia." Riko + Tia at Cafe Alba at NIGHT,
+   whole CAFE ALBA neon sign overhead, warm storefront glow on the tables,
+   lit windows behind. The dossier's one night shot.
 4. **4-vista.jpg** — "Half the frame is sky." Beach golden hour, sun over
-   the ocean, pier diagonal, hero coupe + Riko on the sand.
+   the ocean, pier diagonal, hero coupe + Riko whole in frame on the sand.
 
 ## Play
 
@@ -69,6 +92,7 @@ node serve.ts        # http://localhost:8080
 ```sh
 node tools/gate-check.js    # load, 0 console errors, 0 external requests
 node tools/playtest.js      # autopilot finishes mission 1, cash before -> after
+node tools/carjack-swat.js  # driver pull-out + 5* SWAT + heli shot down
 node tools/shots.js         # 10 candidates -> pick 4, grayscale/blur/168x94 checks
 ```
 
@@ -76,19 +100,22 @@ Measured in this session (2026-11-18, headless Chromium 1255 + SwiftShader):
 
 - **Gate** (`tools/gate-check.js`): PASS — 0 console errors, 0 page
   errors, 0 failed requests, 0 external requests; canvas non-blank
-  (pixel mean ~35, 107 distinct colors); 48–55 draw calls in the spawn scene.
-- **Playtest** (`tools/playtest.js`): PASS (2 consecutive runs) — autopilot
-  finishes mission 1, cash **$150 → $450 (+$300)**, mission 0 → 1
-  ("Borrow a Coupe"); 0 page errors; 48 pedestrians, 27 traffic cars live.
+  (pixel mean ~34.8, 108 distinct colors); 48 draw calls in the spawn scene.
+- **Playtest** (`tools/playtest.js`): PASS — autopilot finishes mission 1,
+  cash **$150 → $450 (+$300)**, mission 0 → 1 ("Borrow a Coupe");
+  0 page errors; 48 pedestrians, 27 traffic cars live.
+- **Carjack + SWAT** (`tools/carjack-swat.js`): PASS — 16 driven traffic
+  cars have drivers, 10 parked + hero have none; E-steal pulls exactly 1
+  driver out, fleeing, 5.2 m covered; at 5 stars 3 cruisers + 1 SWAT
+  (black armored Truck, top speed 38 vs cruiser 34); heli down on the
+  3rd hit and stays down until wanted falls below 3 stars.
 - **Screenshots** (`tools/shots.js`): 10 candidates, 0 errors, draw calls
-  37–69 across scenes; finals 960×540 JPEG q80, 51–89 KiB each (limit
-  256 KiB); all 4 pass the grayscale + blur + 168×94 legibility check.
-- **Dossier** (`MAKEFUN_OUTPUT_DIR=out node main.ts`): 520,283 bytes
-  (limit 4 MiB), text 142,434 bytes (limit 163,840), 4 images; two runs
-  byte-identical (sha256
-  5d66ac3a3266787fe2bdb591fa022326fafc2bcdf880d20e7205f126b8b01b9a).
-- **Limits**: `game/` is 22 files, 811,832 bytes (limits: 993 files,
-  48 MiB); `index.html` well under 1 MiB.
+  32–73 across scenes; finals 1280×720 JPEG q82, 98–153 KiB each (limit
+  256 KiB, long side at most 1280 per RULES.txt); all 4 pass the
+  grayscale + blur + 168×94 legibility check.
+- **Dossier** (`MAKEFUN_OUTPUT_DIR=out node main.ts`): 857,007 bytes
+  (limit 4 MiB), 4 images; two runs byte-identical (sha256
+  1493662959838ad8351ffec55da142fcb7fb1a5fa733e877eb902d4c278ba19a).
 
 ## License
 
