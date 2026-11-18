@@ -1,72 +1,68 @@
-/* Solmar Bay — HUD and menu styling. Warm sunset palette over the 3D city. */
-html, body { margin: 0; height: 100%; overflow: hidden; background: #1a2433; font-family: "Trebuchet MS", Verdana, sans-serif; }
-#game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-#status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* MARISOL HEAT — style.css. One job: HUD + menus. Lean, high-contrast,
+   legible at 960x540: corners for persistent info, bottom-centre for the
+   objective, centre for the crosshair only. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a12;
+  font-family: Arial, Helvetica, sans-serif; color: #fff; }
+#game { display: block; width: 100%; height: 100%; }
 
-#hud { position: fixed; inset: 0; pointer-events: none; color: #fff; z-index: 5; }
-#hud.dim { filter: brightness(0.45); }
-#hud-top-left { position: absolute; top: 14px; left: 16px; text-shadow: 0 2px 4px rgba(0,0,0,0.7); }
-#hud-cash { font-size: 30px; font-weight: bold; color: #7ee787; letter-spacing: 1px; }
-#hud-health { width: 170px; height: 10px; margin-top: 6px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.5); border-radius: 5px; overflow: hidden; }
-#hud-health-fill { height: 100%; width: 100%; background: #58c96b; transition: width 0.2s; }
-#hud-stars { font-size: 22px; margin-top: 4px; letter-spacing: 3px; }
-#hud-top-right { position: absolute; top: 14px; right: 16px; text-align: right; text-shadow: 0 2px 4px rgba(0,0,0,0.7); }
-#hud-time { font-size: 22px; font-weight: bold; }
-#hud-ammo { font-size: 15px; margin-top: 2px; }
-#hud-speed { font-size: 26px; font-weight: bold; color: #ffd23d; }
-#hud-objective {
-  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  max-width: 46%; text-align: center; font-size: 16px; font-weight: bold;
-  background: rgba(10, 20, 35, 0.62); border: 1px solid rgba(255, 210, 61, 0.55);
-  border-radius: 8px; padding: 8px 14px; text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-}
-#hud-mission { display: none; }
-#minimap {
-  position: absolute; left: 16px; bottom: 16px; width: 188px; height: 188px;
-  border: 2px solid rgba(255,255,255,0.65); border-radius: 50%;
-  background: #3d4a4a; box-shadow: 0 4px 14px rgba(0,0,0,0.5);
-}
-#hud-help {
-  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-  font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-  background: rgba(0,0,0,0.35); padding: 4px 10px; border-radius: 6px; white-space: nowrap;
-}
-#banner {
-  position: absolute; top: 22%; left: 50%; transform: translateX(-50%) scale(0.96);
-  text-align: center; opacity: 0; transition: opacity 0.3s, transform 0.3s;
-  text-shadow: 0 3px 8px rgba(0,0,0,0.8);
-}
-#banner.show { opacity: 1; transform: translateX(-50%) scale(1); }
-.banner-title { font-size: 44px; font-weight: bold; color: #ffd23d; letter-spacing: 2px; }
-.banner-sub { font-size: 17px; color: #fff; margin-top: 4px; }
-#toast {
-  position: absolute; bottom: 220px; left: 50%; transform: translateX(-50%);
-  background: rgba(10, 20, 35, 0.75); border: 1px solid rgba(255,255,255,0.4);
-  padding: 8px 16px; border-radius: 8px; font-size: 15px; opacity: 0; transition: opacity 0.3s;
-}
-#toast.show { opacity: 1; }
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#hud-top-left { position: absolute; top: 14px; left: 16px; }
+#hud-stars { font-size: 26px; letter-spacing: 3px; color: #ffd21a;
+  text-shadow: 0 0 6px rgba(0,0,0,0.8); }
+#hud-stars .star.hollow { color: transparent; -webkit-text-stroke: 1.5px #ffd21a; }
+#hud-stars .star.empty { color: rgba(255,255,255,0.25); }
+#hud-wanted-label { font-size: 11px; font-weight: bold; letter-spacing: 1px;
+  color: #ffb020; text-shadow: 0 1px 2px #000; min-height: 14px; }
+#hud-wanted-label.searching { color: #9fd8ff; }
+#hud-cash { font-size: 26px; font-weight: bold; color: #2aff5a;
+  text-shadow: 0 2px 3px #000; margin-top: 2px; }
+#hud-bars { margin-top: 6px; }
+.bar { width: 150px; height: 9px; background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.4); border-radius: 4px; overflow: hidden; }
+.bar + .bar { margin-top: 3px; }
+#hud-health { height: 100%; background: #2aff5a; }
+#hud-armor { height: 100%; background: #4a9aff; }
+.bar.armor { height: 6px; }
 
-.menu {
-  position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(160deg, rgba(20,40,70,0.82), rgba(120,60,20,0.72));
-}
-.menu.hidden { display: none; }
-.menu-card {
-  max-width: 620px; width: 90%; text-align: center; color: #fff;
-  background: rgba(8, 16, 30, 0.78); border: 1px solid rgba(255, 210, 61, 0.5);
-  border-radius: 16px; padding: 30px 36px; box-shadow: 0 12px 40px rgba(0,0,0,0.6);
-}
-.menu-card h1 { font-size: 52px; margin: 0 0 6px; letter-spacing: 4px; color: #ffd23d; text-shadow: 0 3px 10px rgba(0,0,0,0.6); }
-.tagline { font-size: 17px; font-style: italic; color: #ffe9b0; margin: 0 0 14px; }
-.story { font-size: 15px; line-height: 1.55; color: #e8ecf2; }
-.controls { display: flex; flex-wrap: wrap; gap: 8px 18px; justify-content: center; margin: 16px 0 20px; font-size: 13px; color: #cdd6e4; }
-.controls b { color: #ffd23d; }
-button.big {
-  display: block; margin: 10px auto; padding: 13px 30px; font-size: 18px; font-weight: bold;
-  color: #1a2433; background: #ffd23d; border: none; border-radius: 10px; cursor: pointer;
-  box-shadow: 0 4px 0 #b8922a;
-}
-button.big:hover { background: #ffe08a; }
-button.big.secondary { background: #dfe6ee; box-shadow: 0 4px 0 #8a97a8; font-size: 15px; padding: 10px 22px; }
-button.big.hidden { display: none; }
-.fine { font-size: 12px; color: #9fb0c4; margin-top: 16px; }
+#hud-top-right { position: absolute; top: 14px; right: 16px; text-align: right; }
+#hud-minimap { border: 2px solid rgba(255,255,255,0.65); border-radius: 50%;
+  box-shadow: 0 0 12px rgba(0,0,0,0.6); background: #0a0c14; }
+#hud-clock { font-size: 18px; font-weight: bold; text-shadow: 0 1px 2px #000; margin-top: 4px; }
+#hud-radio { font-size: 12px; color: #ffc978; text-shadow: 0 1px 2px #000; }
+
+#hud-bottom-left { position: absolute; bottom: 16px; left: 16px; }
+#hud-speed { font-size: 26px; font-weight: bold; text-shadow: 0 2px 3px #000; }
+#hud-ammo { font-size: 14px; font-weight: bold; color: #ffe14a; text-shadow: 0 1px 2px #000; }
+
+#hud-bottom-center { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
+  width: 60%; text-align: center; }
+#hud-objective { font-size: 17px; font-weight: bold; text-shadow: 0 2px 3px #000; }
+#hud-subtitle { font-size: 13px; color: #ffe9b0; text-shadow: 0 1px 2px #000; margin-top: 2px; }
+#hud-prompt { font-size: 13px; font-weight: bold; color: #7fe0ff; background: rgba(0,0,0,0.55);
+  display: inline-block; padding: 4px 10px; border-radius: 6px; margin-top: 6px; }
+
+#hud-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  font-size: 26px; color: #fff; text-shadow: 0 0 4px #000; }
+#hud-banner { position: absolute; top: 22%; left: 50%; transform: translateX(-50%);
+  text-align: center; }
+#hud-banner-title { font-size: 34px; font-weight: bold; letter-spacing: 2px;
+  color: #ffc21a; text-shadow: 0 3px 6px #000; }
+#hud-banner-sub { font-size: 16px; text-shadow: 0 2px 3px #000; margin-top: 4px; }
+#hud-toast { position: absolute; top: 64px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.65); padding: 6px 14px; border-radius: 6px; font-size: 14px; }
+
+.menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, rgba(20,10,40,0.88), rgba(60,20,10,0.82)); z-index: 10; }
+.menu-card { max-width: 560px; padding: 36px 44px; text-align: center;
+  background: rgba(10,10,18,0.72); border: 1px solid rgba(255,180,80,0.5); border-radius: 14px; }
+.menu-card h1 { font-size: 44px; letter-spacing: 4px; color: #ffb020;
+  text-shadow: 0 0 18px rgba(255,140,40,0.6); }
+.tagline { color: #7fe0ff; font-weight: bold; margin: 8px 0 14px; letter-spacing: 1px; }
+.story { font-size: 15px; line-height: 1.5; color: #eee; }
+.menu-card button { display: block; width: 240px; margin: 12px auto 0; padding: 12px;
+  font-size: 16px; font-weight: bold; letter-spacing: 2px; cursor: pointer;
+  color: #111; background: #ffb020; border: none; border-radius: 8px; }
+.menu-card button:hover { background: #ffc94a; }
+.controls { font-size: 12px; color: #bbb; margin-top: 18px; line-height: 1.6; }
+.fine { font-size: 11px; color: #999; margin-top: 10px; line-height: 1.5; }
