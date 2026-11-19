@@ -53,8 +53,11 @@ export function createVehicles(scene, city, rng, blobs, particles) {
     new THREE.BoxGeometry(1, 0.75, 1),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.55 }), MAX_CARS);
   const cabinIM = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(1, 0.65, 1),
-    new THREE.MeshStandardMaterial({ color: 0x18222e, roughness: 0.15, metalness: 0.7 }), MAX_CARS);
+    new THREE.BoxGeometry(1, 0.42, 1),
+    // tinted blue-grey glass, low and flat: a tall pale cabin read as a
+    // plain box on the roof (mission foreground car, vista hero) — this
+    // lower, darker glass reads as a windshield + roofline instead
+    new THREE.MeshStandardMaterial({ color: 0x7fa8bc, roughness: 0.15, metalness: 0.2 }), MAX_CARS);
   const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10);
   wheelGeo.rotateZ(Math.PI / 2);
   const wheelIM = new THREE.InstancedMesh(wheelGeo,
@@ -83,7 +86,7 @@ export function createVehicles(scene, city, rng, blobs, particles) {
     new THREE.BoxGeometry(1.4, 0.5, 2.0),
     new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.55, metalness: 0.5 }), MAX_SWAT);
   const swatBarIM = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.9, 0.18, 0.35),
+    new THREE.BoxGeometry(1.3, 0.28, 0.35),
     new THREE.MeshBasicMaterial({ color: 0xffb020 }), MAX_SWAT);
   for (const im of [bodyIM, cabinIM, wheelIM, frontIM, rearIM, doorIM, redIM, blueIM, plateIM, swatRoofIM, swatBarIM]) {
     im.castShadow = true;
@@ -100,7 +103,7 @@ export function createVehicles(scene, city, rng, blobs, particles) {
   function syncCar(car) {
     const i = car.idx, t = car.type;
     composePart(bodyIM, i, car.x, 0.65, car.z, car.angle, t.wid, 1, t.len);
-    composePart(cabinIM, i, car.x, 1.3, car.z, car.angle, t.wid - 0.3, 1, t.len * 0.5, 0, -t.len * 0.05);
+    composePart(cabinIM, i, car.x, 1.19, car.z, car.angle, t.wid - 0.3, 1, t.len * 0.42, 0, -t.len * 0.1);
     composePart(frontIM, i, car.x, 0.7, car.z, car.angle, t.wid * 0.7, 1, 1, 0, t.len / 2 + 0.02);
     composePart(rearIM, i, car.x, 0.7, car.z, car.angle, t.wid * 0.7, 1, 1, 0, -t.len / 2 - 0.02);
     for (let k = 0; k < 4; k++) {
@@ -214,7 +217,9 @@ export function createVehicles(scene, city, rng, blobs, particles) {
     },
     setSwatStrobe(car, on) {
       if (car.sIdx === undefined) return;
-      swatBarIM.setColorAt(car.sIdx, _col.setHex(on ? 0xffb020 : 0x4a2c00));
+      // off-phase stays bright amber (0x8a5a10), never near-black, so the
+      // bar reads as amber even between strobes
+      swatBarIM.setColorAt(car.sIdx, _col.setHex(on ? 0xffb020 : 0x8a5a10));
       if (swatBarIM.instanceColor) swatBarIM.instanceColor.needsUpdate = true;
     },
     placeCar(car, x, z, angle, speed) {
@@ -319,6 +324,23 @@ export function createVehicles(scene, city, rng, blobs, particles) {
           if (city.tlLampIM.instanceColor) city.tlLampIM.instanceColor.needsUpdate = true;
         }
       }
+    },
+    // Hold one light red for `seconds` (staging helper for the city shot:
+    // traffic queues behind it). Returns false if no light is at (x, z).
+    forceRedLight(x, z, seconds) {
+      const DIM = 0x2a0d0d;
+      for (const tl of city.trafficLights) {
+        if (Math.abs(tl.x - x) < 1 && Math.abs(tl.z - z) < 1) {
+          tl.state = "r"; tl.timer = seconds;
+          const order = ["r", "y", "g"];
+          for (let k = 0; k < 3; k++) {
+            city.tlLampIM.setColorAt(tl.lampBase + k, _col.setHex(order[k] === "r" ? 0xff2a1a : DIM));
+          }
+          if (city.tlLampIM.instanceColor) city.tlLampIM.instanceColor.needsUpdate = true;
+          return true;
+        }
+      }
+      return false;
     },
   };
 }
