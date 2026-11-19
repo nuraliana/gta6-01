@@ -31,7 +31,7 @@ function buildHeli(scene) {
   spot.position.set(0, -0.5, 0);
   g.add(spot);
   const cone = new THREE.Mesh(new THREE.ConeGeometry(3.2, 26, 12, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false }));
+    new THREE.MeshBasicMaterial({ depthWrite: false, side: THREE.DoubleSide, opacity: 0.06, transparent: true, color: 0xfff2c0 }));
   cone.rotation.x = Math.PI; cone.position.y = -13; g.add(cone);
   g.userData = { rotor, spot, cone };
   scene.add(g);

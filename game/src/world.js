@@ -129,6 +129,7 @@ export function createWorld(canvas) {
     const p = render.applyTime(name);
     state.hour = p.hour;
     city.lampHeadMat.emissiveIntensity = name === "night" ? 2.6 : name === "golden" ? 1.2 : 0.25;
+    if (city.lightPools) city.lightPools.visible = name === "night";
   }
 
   // ---- shooting input (mouse click = shoot toward crosshair ray) ----

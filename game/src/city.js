@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { CONFIG } from "./config.js";
 import { makeRng } from "./random.js";
 import { mergeGeometries } from "./util.js";
-import { facadeTexture, signTexture, groundTexture, sidewalkTexture, grassTexture, awningTexture, storefrontTexture, menuTexture, lightPoolTexture } from "./textures.js";
+import { facadeTexture, signTexture, groundTexture, sidewalkTexture, grassTexture, cafeStorefrontTexture, awningTexture, lightPoolTexture, aboardTexture } from "./textures.js";
 
 function districtAt(x, z) {
   let best = CONFIG.DISTRICTS[0], bd = Infinity;
@@ -38,7 +38,6 @@ export function buildCity(scene, rng) {
     named: {},            // place key -> {x,z}
     trafficLights: [],    // {x,z,axis,state,timer,lamps:{r,y,g}}
     lamps: [],            // streetlight head positions (for night glow)
-    lampHeadMat: null, lightPoolIM: null,
     oceanMat: null, foamMat: null,
     spireTop: null,       // landmark beacon mesh (bloom source)
   };
@@ -49,7 +48,7 @@ export function buildCity(scene, rng) {
   // Replaces 22 road strips + base + sand plane = 1 draw call.
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(HALF * 2 + 120, HALF * 2 + 220),
-    new THREE.MeshStandardMaterial({ map: groundTexture(), roughness: 1 })
+    new THREE.MeshStandardMaterial({ map: groundTexture(rng), roughness: 1 })
   );
   ground.rotation.x = -Math.PI / 2; ground.position.set(0, -0.05, 60);
   ground.receiveShadow = true; scene.add(ground);
@@ -63,24 +62,6 @@ export function buildCity(scene, rng) {
   const foam = new THREE.Mesh(new THREE.PlaneGeometry(560, 4), out.foamMat);
   foam.rotation.x = -Math.PI / 2; foam.position.set(0, 0.05, HALF + 148);
   scene.add(foam);
-  // two extra foam bands, fainter, further out
-  for (const [fz, fo] of [[HALF + 156, 0.4], [HALF + 168, 0.25]]) {
-    const band = new THREE.Mesh(new THREE.PlaneGeometry(560, 2.5),
-      new THREE.MeshBasicMaterial({ color: 0xeaf6f2, transparent: true, opacity: fo }));
-    band.rotation.x = -Math.PI / 2; band.position.set(0, 0.03, fz);
-    scene.add(band);
-  }
-  // sun glitter: a warm additive strip on the water along the golden-hour
-  // sun azimuth, from the shore out toward the sun
-  {
-    const glitGeo = new THREE.PlaneGeometry(46, 220);
-    glitGeo.rotateX(-Math.PI / 2);
-    glitGeo.rotateY(-0.9);
-    const glitter = new THREE.Mesh(glitGeo,
-      new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false }));
-    glitter.position.set(-77, 0.02, HALF + 208);
-    scene.add(glitter);
-  }
 
   // (roads are painted into the ground texture — see textures.js groundTexture)
 
@@ -105,7 +86,7 @@ export function buildCity(scene, rng) {
     for (let iz = 0; iz < N; iz++) {
       const bx = -HALF + ix * P + P / 2, bz = -HALF + iz * P + P / 2;
       if (bz > HALF - P) continue; // beach row stays open sand
-      blocks.push([bx, bz, ix, iz]);
+      blocks.push([bx, bz]);
       const d = districtAt(bx, bz);
       const isPark = rng.next() < 0.1;
       if (isPark) { parks.push([bx, bz]); continue; }
@@ -129,19 +110,14 @@ export function buildCity(scene, rng) {
       }
     }
   }
-  // block tops (instanced) — alternating ±8% tone per block, matching the
-  // ground texture's checker so the sidewalk reads tiled, not flat
+  // block tops (instanced)
   const blockMesh = new THREE.InstancedMesh(blockTopGeo, blockTopMat, blocks.length);
   const m4 = new THREE.Matrix4();
-  const blockCol = new THREE.Color();
-  blocks.forEach(([bx, bz, ix, iz], i) => {
+  blocks.forEach(([bx, bz], i) => {
     m4.makeScale(CONFIG.BLOCK, 1, CONFIG.BLOCK);
     m4.setPosition(bx, 0, bz);
     blockMesh.setMatrixAt(i, m4);
-    const tone = (ix + iz) % 2 === 0 ? 1.08 : 0.92;
-    blockMesh.setColorAt(i, blockCol.setRGB(tone, tone, tone));
   });
-  if (blockMesh.instanceColor) blockMesh.instanceColor.needsUpdate = true;
   blockMesh.receiveShadow = true; scene.add(blockMesh);
 
   // buildings (3 instanced draws)
@@ -180,118 +156,103 @@ export function buildCity(scene, rng) {
   crownGeo.translate(0, 7.8, 0);
   const crownMat = new THREE.MeshStandardMaterial({ color: 0x2f7a33, roughness: 0.9, flatShading: true });
   const crownIM = new THREE.InstancedMesh(crownGeo, crownMat, palmSpots.length);
-  // Palm variety comes from its OWN seeded sub-rng (positions stay on the
-  // main rng stream, so the rest of the city layout never shifts): each
-  // palm gets a random scale 0.7–1.3 and a slight lean ±0.06 rad.
-  const palmRng = makeRng(CONFIG.SEED * 1000 + 11);
-  const palmQ = new THREE.Quaternion();
-  const palmE = new THREE.Euler();
-  const palmS = new THREE.Vector3();
-  const palmP = new THREE.Vector3();
+  // Palms: one seeded draw per palm drives its size (0.7-1.3x), its lean
+  // (up to ~0.06 rad, random direction) and its facing, so the stream
+  // stays exactly one draw per palm like the base.
   palmSpots.forEach(([x, z], i) => {
-    const s = palmRng.range(0.7, 1.3);
-    palmE.set(palmRng.range(-0.06, 0.06), palmRng.range(0, Math.PI * 2), palmRng.range(-0.06, 0.06));
-    palmQ.setFromEuler(palmE);
-    palmP.set(x, 0, z); palmS.set(s, s, s);
-    m4.compose(palmP, palmQ, palmS);
+    const u = rng.next();
+    const rotY = u * Math.PI * 2;
+    const scale = 0.7 + 0.6 * u;
+    const lean = 0.06 * ((u * 7.31 + 0.13) % 1);
+    const leanDir = u * Math.PI * 2;
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), rotY);
+    const tilt = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(Math.cos(leanDir), 0, Math.sin(leanDir)), lean);
+    q.multiply(tilt);
+    m4.compose(new THREE.Vector3(x, 0, z), q, new THREE.Vector3(scale, scale, scale));
     trunkIM.setMatrixAt(i, m4); crownIM.setMatrixAt(i, m4);
   });
   trunkIM.castShadow = true; crownIM.castShadow = true;
   scene.add(trunkIM); scene.add(crownIM);
 
   // ---- streetlights (instanced poles + emissive heads) ----
+  // Each spot carries its own base height and head height (defaults 0 / 6.1):
+  // the extra cafe-corner lamp and the three pier lamps ride the same two
+  // instanced meshes, with shorter poles on the pier deck.
   const lampSpots = [];
   for (let i = 0; i <= N; i += 2) for (let j = 0; j <= N; j += 2) {
-    lampSpots.push([-HALF + i * P + 9, -HALF + j * P + 9]);
+    lampSpots.push([-HALF + i * P + 9, -HALF + j * P + 9, 0, 6.1, false]);
   }
+  lampSpots.push([68, -72, 0, 6.1, false]); // extra lamp, Cafe Alba corner
+  lampSpots.push([4, 312, 1.5, 4.8, true], [-4, 344, 1.5, 4.8, true], [4, 376, 1.5, 4.8, true]); // pier lamps
   const poleGeo = new THREE.CylinderGeometry(0.12, 0.16, 6, 6);
   poleGeo.translate(0, 3, 0);
-  const poleIM = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.6, metalness: 0.6 }), lampSpots.length + 1);
+  const poleIM = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.6, metalness: 0.6 }), lampSpots.length);
   const headGeo = new THREE.SphereGeometry(0.35, 8, 6);
   const headMat = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffc978, emissiveIntensity: 0.4 });
-  const headIM = new THREE.InstancedMesh(headGeo, headMat, lampSpots.length + 1);
-  lampSpots.forEach(([x, z], i) => {
-    m4.identity(); m4.setPosition(x, 0, z); poleIM.setMatrixAt(i, m4);
-    m4.identity(); m4.setPosition(x, 6.1, z); headIM.setMatrixAt(i, m4);
+  const headIM = new THREE.InstancedMesh(headGeo, headMat, lampSpots.length);
+  lampSpots.forEach(([x, z, baseY, headY], i) => {
+    m4.makeScale(1, (headY - baseY) / 6, 1); m4.setPosition(x, baseY, z); poleIM.setMatrixAt(i, m4);
+    m4.identity(); m4.setPosition(x, headY, z); headIM.setMatrixAt(i, m4);
     out.lamps.push([x, z]);
   });
-  // one extra streetlamp on the cafe's east sidewalk corner (68,-72):
-  // the grid lamps are all far from Cafe Alba, so this is the lamp whose
-  // light pool actually lands in the mission shot's foreground
-  {
-    const ci = lampSpots.length;
-    m4.identity(); m4.setPosition(68, 0, -72); poleIM.setMatrixAt(ci, m4);
-    m4.identity(); m4.setPosition(68, 6.1, -72); headIM.setMatrixAt(ci, m4);
-    out.lamps.push([68, -72]);
-  }
   scene.add(poleIM); scene.add(headIM);
   out.lampHeadMat = headMat;
-  // Warm light pools on the ground under every streetlamp — night preset
-  // only (toggled in world.setTimePreset). One instanced draw.
+
+  // Warm light pools under every street lamp (not the pier lamps — their
+  // pools would fall under the deck). One shared radial texture, one draw.
   {
-    const poolGeo = new THREE.PlaneGeometry(7, 7);
+    const streetSpots = lampSpots.filter((s) => !s[4]);
+    const poolGeo = new THREE.PlaneGeometry(8, 8);
     poolGeo.rotateX(-Math.PI / 2);
     const poolIM = new THREE.InstancedMesh(poolGeo,
-      new THREE.MeshBasicMaterial({ map: lightPoolTexture(), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }),
-      lampSpots.length + 1);
-    lampSpots.forEach(([x, z], i) => {
-      m4.identity(); m4.setPosition(x, 0.07, z);
-      poolIM.setMatrixAt(i, m4);
+      new THREE.MeshBasicMaterial({ map: lightPoolTexture(), transparent: true, depthWrite: false }),
+      streetSpots.length);
+    streetSpots.forEach(([x, z], i) => {
+      m4.identity(); m4.setPosition(x, 0.07, z); poolIM.setMatrixAt(i, m4);
     });
-    // pool for the extra cafe-corner lamp
-    m4.identity(); m4.setPosition(68, 0.07, -72);
-    poolIM.setMatrixAt(lampSpots.length, m4);
-    poolIM.visible = false;
+    poolIM.visible = false; // only the night preset shows them (world.js)
     scene.add(poolIM);
-    out.lightPoolIM = poolIM;
+    out.lightPools = poolIM;
   }
 
-  // ---- props: 3 distinct instanced shapes (bench / bin / hydrant), 20
-  // each, kept inside the block interior (±14 from the block centre) so
-  // none of them reads as litter sitting in the road.
+  // ---- props: benches, bins, hydrants — three real shapes, one draw each.
+  // 60 spots spread round-robin across the three shapes; spots stay inside
+  // the block interior (+/-14 m) so they never read as litter mid-road.
   const propSpots = [];
   for (let i = 0; i < 60; i++) {
     const bx = -HALF + rng.int(0, N - 1) * P + P / 2 + rng.range(-14, 14);
     const bz = -HALF + rng.int(0, N - 1) * P + P / 2 + rng.range(-14, 14);
-    propSpots.push([bx, bz]);
-  }
-  function propIM(geo, color, spots, extra = [], fixed = []) {
-    const im = new THREE.InstancedMesh(geo,
-      new THREE.MeshStandardMaterial({ color, roughness: 0.9 }), spots.length + extra.length + fixed.length);
-    [...spots, ...extra].forEach(([x, z], i) => {
-      m4.makeRotationY(rng.range(0, Math.PI * 2)); m4.setPosition(x, 0, z);
-      im.setMatrixAt(i, m4);
-    });
-    // Hand-placed `fixed` spots use a position-hash yaw and draw NO rng:
-    // the main rng stream must not shift, or every traffic car, ped and
-    // police spawn angle downstream moves with it (r4 layout is verified).
-    fixed.forEach(([x, z], j) => {
-      const i = spots.length + extra.length + j;
-      m4.makeRotationY((x * 0.37 + z * 0.73) % (Math.PI * 2)); m4.setPosition(x, 0, z);
-      im.setMatrixAt(i, m4);
-    });
-    im.castShadow = true; scene.add(im);
-    return im;
+    propSpots.push([bx, bz, rng.pick([0x8a6a3a, 0x2a4a2a, 0xb03a2a])]);
   }
   const benchGeo = mergeGeometries([
-    new THREE.BoxGeometry(1.6, 0.12, 0.7).translate(0, 0.45, 0),
-    new THREE.BoxGeometry(1.6, 0.7, 0.1).translate(0, 0.85, -0.3),
+    new THREE.BoxGeometry(1.7, 0.12, 0.65).translate(0, 0.45, 0),
+    new THREE.BoxGeometry(1.7, 0.65, 0.1).rotateX(-0.12).translate(0, 0.85, -0.3),
+    new THREE.BoxGeometry(0.1, 0.45, 0.55).translate(-0.7, 0.22, 0),
+    new THREE.BoxGeometry(0.1, 0.45, 0.55).translate(0.7, 0.22, 0),
   ]);
-  // the 21st bench sits on the pier, facing the sea; the 22nd anchors the
-  // city shot's empty bottom-left foreground (block (56,112) south edge,
-  // clear of its one building at (56,112) which ends at x=64.6 / z=120.7;
-  // NDC-verified in frame at screen ~(196,663))
-  propIM(benchGeo, 0x8a6a3a, propSpots.slice(0, 20), [[2.5, 378]], [[72, 120]]);
-  const binGeo = new THREE.CylinderGeometry(0.45, 0.45, 1.0, 10);
-  binGeo.translate(0, 0.5, 0);
-  propIM(binGeo, 0x3a5a4a, propSpots.slice(20, 40));
+  const binGeo = new THREE.CylinderGeometry(0.45, 0.4, 0.95, 10).translate(0, 0.48, 0);
   const hydrantGeo = mergeGeometries([
-    new THREE.CylinderGeometry(0.22, 0.28, 0.9, 8).translate(0, 0.45, 0),
-    new THREE.SphereGeometry(0.22, 8, 6).translate(0, 0.95, 0),
+    new THREE.CylinderGeometry(0.24, 0.28, 0.7, 8).translate(0, 0.35, 0),
+    new THREE.SphereGeometry(0.24, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.7, 0),
+    new THREE.CylinderGeometry(0.09, 0.09, 0.3, 6).rotateZ(Math.PI / 2).translate(0.3, 0.45, 0),
   ]);
-  // one red hydrant beside the foreground bench above (same clear strip,
-  // NDC-verified in frame at screen ~(150,600))
-  propIM(hydrantGeo, 0xb03a2a, propSpots.slice(40, 60), [], [[68, 116]]);
+  const benchIM = new THREE.InstancedMesh(benchGeo, new THREE.MeshStandardMaterial({ color: 0x8a6a3a, roughness: 0.9 }), 21);
+  const binIM = new THREE.InstancedMesh(binGeo, new THREE.MeshStandardMaterial({ color: 0x2a4a2a, roughness: 0.9 }), 20);
+  const hydrantIM = new THREE.InstancedMesh(hydrantGeo, new THREE.MeshStandardMaterial({ color: 0xb03a2a, roughness: 0.7 }), 21);
+  let bi = 0, ni = 0, hi = 0;
+  propSpots.forEach(([x, z], i) => {
+    m4.makeRotationY(rng.range(0, Math.PI * 2)); m4.setPosition(x, 0, z);
+    if (i % 3 === 0) benchIM.setMatrixAt(bi++, m4);
+    else if (i % 3 === 1) binIM.setMatrixAt(ni++, m4);
+    else hydrantIM.setMatrixAt(hi++, m4);
+  });
+  // Two fixed spots (no rng draws, so the stream after them is untouched):
+  // a bench on the sidewalk facing the city-shot camera, and a red hydrant
+  // beside it filling the shot's empty lower-left foreground.
+  m4.makeRotationY(Math.PI); m4.setPosition(72, 0, 120); benchIM.setMatrixAt(bi++, m4);
+  m4.identity(); m4.setPosition(75, 0, 122); hydrantIM.setMatrixAt(hi++, m4);
+  for (const im of [benchIM, binIM, hydrantIM]) { im.castShadow = true; scene.add(im); }
 
   // ---- zebra crossings at 4 main intersections ----
   const zebraGeo = new THREE.PlaneGeometry(1.2, 5);
@@ -346,134 +307,92 @@ export function buildCity(scene, rng) {
     m4.identity(); m4.setPosition(sx, 0, HALF + 8 + k * 7.5); postIM.setMatrixAt(pi++, m4);
   }
   postIM.count = pi; scene.add(postIM);
-  // pier rails on both sides (1 instanced draw)
-  {
-    const railGeo = new THREE.BoxGeometry(0.15, 0.9, 88);
-    const railIM = new THREE.InstancedMesh(railGeo, pierMat, 2);
-    [-4.8, 4.8].forEach((rx, i) => {
-      m4.identity(); m4.setPosition(rx, 1.7, HALF + 92);
-      railIM.setMatrixAt(i, m4);
-    });
-    scene.add(railIM);
-  }
-  // 3 pier lamps: instanced poles + emissive heads
-  {
-    const pPoleGeo = new THREE.CylinderGeometry(0.09, 0.12, 2.6, 6);
-    pPoleGeo.translate(0, 1.3, 0);
-    const pPoleIM = new THREE.InstancedMesh(pPoleGeo,
-      new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.6, metalness: 0.6 }), 3);
-    const pHeadIM = new THREE.InstancedMesh(new THREE.SphereGeometry(0.28, 8, 6),
-      new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffc978, emissiveIntensity: 2.2 }), 3);
-    [[-4.2, 310], [4.2, 345], [-4.2, 380]].forEach(([lx, lz], i) => {
-      m4.identity(); m4.setPosition(lx, 1.5, lz); pPoleIM.setMatrixAt(i, m4);
-      m4.identity(); m4.setPosition(lx, 4.2, lz); pHeadIM.setMatrixAt(i, m4);
-    });
-    scene.add(pPoleIM); scene.add(pHeadIM);
-  }
-  // hut at the end of the pier (merged box + cone roof, 1 draw)
-  {
-    const hutGeo = mergeGeometries([
-      new THREE.BoxGeometry(4, 2.6, 4).translate(0, 1.3, 0),
-      new THREE.ConeGeometry(3.4, 1.6, 4).translate(0, 3.4, 0),
-    ]);
-    const hut = new THREE.Mesh(hutGeo,
-      new THREE.MeshStandardMaterial({ color: 0x7a5a3a, roughness: 1 }));
-    hut.position.set(0, 1.5, HALF + 132);
-    hut.rotation.y = Math.PI / 4;
-    hut.castShadow = true;
-    scene.add(hut);
-  }
 
-  // ---- beach props (seeded sub-rng; pier + hero car + Riko kept clear) ----
+  // Pier rails (two thin bars per side, two heights) + a bench mid-pier,
+  // merged into one wooden piece, one draw.
   {
-    const beachRng = makeRng(7101);
-    const spots = [];
-    for (let i = 0; i < 5; i++) {
-      let x, z, tries = 0;
-      do {
-        x = beachRng.range(-120, 120);
-        z = beachRng.range(268, 332);
-        tries++;
-      } while (tries < 20 && (Math.abs(x) < 10 ||
-        Math.hypot(x - 20, z - 304) < 6 || Math.hypot(x - 14, z - 310) < 5));
-      spots.push([x, z]);
+    const railParts = [];
+    for (const sx of [-4.8, 4.8]) for (const ry of [2.4, 3.2]) {
+      railParts.push(new THREE.BoxGeometry(0.12, 0.12, 88).translate(sx, ry, HALF + 92));
     }
-    // 5 umbrellas: coloured cone canopies + poles (2 instanced draws)
-    const umbGeo = new THREE.ConeGeometry(1.8, 0.9, 8);
-    umbGeo.translate(0, 2.2, 0);
-    const umbIM = new THREE.InstancedMesh(umbGeo,
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, flatShading: true }), 5);
-    const umbCol = new THREE.Color();
-    const UMB_COLORS = [0xff5a7a, 0xffe14a, 0x2ad8ff, 0xff8a2a, 0x7aff8a];
-    const umbPoleGeo = new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6);
-    umbPoleGeo.translate(0, 1.1, 0);
-    const umbPoleIM = new THREE.InstancedMesh(umbPoleGeo,
-      new THREE.MeshStandardMaterial({ color: 0xe8e0d0, roughness: 0.8 }), 5);
-    spots.forEach(([x, z], i) => {
-      m4.makeRotationY(beachRng.range(0, Math.PI * 2)); m4.setPosition(x, 0, z);
-      umbIM.setMatrixAt(i, m4); umbPoleIM.setMatrixAt(i, m4);
-      umbIM.setColorAt(i, umbCol.setHex(UMB_COLORS[i]));
-    });
-    if (umbIM.instanceColor) umbIM.instanceColor.needsUpdate = true;
-    scene.add(umbIM); scene.add(umbPoleIM);
-    // 3 towels: thin bright boxes beside the umbrellas
-    const towelGeo = new THREE.BoxGeometry(1.8, 0.06, 0.9);
-    towelGeo.translate(0, 0.05, 0);
-    const towelIM = new THREE.InstancedMesh(towelGeo,
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), 3);
-    const TOWEL_COLORS = [0xff5a7a, 0x2ad8ff, 0xffe14a];
-    spots.slice(0, 3).forEach(([x, z], i) => {
-      m4.makeRotationY(beachRng.range(0, Math.PI * 2));
-      m4.setPosition(x + 2.5, 0, z + 2);
-      towelIM.setMatrixAt(i, m4);
-      towelIM.setColorAt(i, umbCol.setHex(TOWEL_COLORS[i]));
-    });
-    if (towelIM.instanceColor) towelIM.instanceColor.needsUpdate = true;
-    scene.add(towelIM);
-    // volleyball net near the pier (merged poles + net, 1 draw)
-    const netGeo = mergeGeometries([
-      new THREE.CylinderGeometry(0.05, 0.05, 2.2, 6).translate(-3, 1.1, 0),
-      new THREE.CylinderGeometry(0.05, 0.05, 2.2, 6).translate(3, 1.1, 0),
-      new THREE.BoxGeometry(6, 1.0, 0.06).translate(0, 1.6, 0),
-    ]);
-    const net = new THREE.Mesh(netGeo,
-      new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 }));
-    net.position.set(-20, 0, 320); net.rotation.y = 0.4;
-    scene.add(net);
-    // driftwood: logs lying flat. Matrices are built with compose()
-    // (position + quaternion + scale) — never translate-then-rotate,
-    // which would orbit the log around the map origin.
-    const logGeo = new THREE.CylinderGeometry(0.25, 0.3, 3.5, 7);
-    logGeo.rotateZ(Math.PI / 2);
-    const logIM = new THREE.InstancedMesh(logGeo,
-      new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 1 }), 2);
-    const logQ = new THREE.Quaternion();
-    const logE = new THREE.Euler();
-    const logP = new THREE.Vector3();
-    const logS = new THREE.Vector3(1, 1, 1);
-    [[-40, 300, 0.7], [60, 318, -0.5]].forEach(([lx, lz, yaw], i) => {
-      logE.set(0, yaw, 0); logQ.setFromEuler(logE);
-      logP.set(lx, 0.25, lz);
-      m4.compose(logP, logQ, logS);
-      logIM.setMatrixAt(i, m4);
-    });
-    logIM.castShadow = true; scene.add(logIM);
-    // starfish: 5-point stars flat on the sand
-    const star = new THREE.Shape();
-    for (let k = 0; k < 10; k++) {
-      const a = (k / 10) * Math.PI * 2 - Math.PI / 2;
-      const r = k % 2 === 0 ? 0.5 : 0.2;
-      if (k === 0) star.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-      else star.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    railParts.push(new THREE.BoxGeometry(1.8, 0.12, 0.6).translate(0, 1.95, HALF + 92));
+    railParts.push(new THREE.BoxGeometry(1.8, 0.6, 0.1).translate(0, 2.35, HALF + 92 - 0.3));
+    const railMesh = new THREE.Mesh(mergeGeometries(railParts), pierMat);
+    railMesh.castShadow = true; scene.add(railMesh);
+  }
+  // Little hut at the end of the pier: box + four-sided pyramid roof
+  // turned 45 degrees, merged into one piece.
+  {
+    const hutParts = [
+      new THREE.BoxGeometry(4, 3, 4).translate(0, 3.0, 384),
+      new THREE.ConeGeometry(3.4, 2, 4).rotateY(Math.PI / 4).translate(0, 5.5, 384),
+    ];
+    const hut = new THREE.Mesh(mergeGeometries(hutParts), pierMat);
+    hut.castShadow = true; scene.add(hut);
+  }
+  // Sun glitter on the sea: one warm translucent sheet under the sun.
+  const glint = new THREE.Mesh(new THREE.PlaneGeometry(90, 140),
+    new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0.42, blending: THREE.AdditiveBlending, depthWrite: false }));
+  glint.rotation.x = -Math.PI / 2; glint.position.set(0, -0.2, 470); scene.add(glint);
+  // Two fainter extra foam lines, merged into one piece.
+  {
+    const foamParts = [
+      new THREE.PlaneGeometry(560, 2).rotateX(-Math.PI / 2).translate(0, 0.05, HALF + 140),
+      new THREE.PlaneGeometry(560, 2).rotateX(-Math.PI / 2).translate(0, 0.05, HALF + 156),
+    ];
+    const foam2 = new THREE.Mesh(mergeGeometries(foamParts),
+      new THREE.MeshBasicMaterial({ color: 0xeaf6f2, transparent: true, opacity: 0.35 }));
+    scene.add(foam2);
+  }
+  // Beach props on their own seeded stream, kept clear of the pier strip
+  // and of the vista hero car at (20,304) so the staging stays clean.
+  {
+    const brng = makeRng(311);
+    const clearOfPierAndCar = (x, z, r) => Math.abs(x) > 13 && Math.hypot(x - 20, z - 304) > r;
+    const umbrellaSpots = [];
+    while (umbrellaSpots.length < 5) {
+      const x = brng.range(-140, 140), z = brng.range(262, 340);
+      if (clearOfPierAndCar(x, z, 16)) umbrellaSpots.push([x, z]);
     }
-    star.closePath();
-    const starGeo = new THREE.ShapeGeometry(star);
-    starGeo.rotateX(-Math.PI / 2);
-    const starIM = new THREE.InstancedMesh(starGeo,
-      new THREE.MeshStandardMaterial({ color: 0xff8a4a, roughness: 0.9 }), 6);
+    const poleGeoB = new THREE.CylinderGeometry(0.06, 0.06, 2.2, 6).translate(0, 1.1, 0);
+    const poleIMB = new THREE.InstancedMesh(poleGeoB, new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.8 }), 5);
+    const canopyGeo = new THREE.ConeGeometry(1.9, 0.9, 8).translate(0, 2.5, 0);
+    const canopyIM = new THREE.InstancedMesh(canopyGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), 5);
+    const umbrellaCols = [0xff5a7a, 0xffd23a, 0x2ad8c2, 0xff7a2a, 0xe84a4a];
+    const towelCols = [0x2a6ad8, 0xffd23a, 0xff5a7a];
+    const towelGeo = new THREE.PlaneGeometry(2.2, 1.2).rotateX(-Math.PI / 2);
+    const towelIM = new THREE.InstancedMesh(towelGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide }), 3);
+    const bc = new THREE.Color();
+    umbrellaSpots.forEach(([x, z], i) => {
+      m4.makeRotationY(brng.range(0, Math.PI * 2)); m4.setPosition(x, 0, z);
+      poleIMB.setMatrixAt(i, m4); canopyIM.setMatrixAt(i, m4);
+      canopyIM.setColorAt(i, bc.setHex(umbrellaCols[i]));
+      m4.identity(); m4.setPosition(x + 2.6, 0.08, z + 1.6);
+      if (i < 3) { towelIM.setMatrixAt(i, m4); towelIM.setColorAt(i, bc.setHex(towelCols[i])); }
+    });
+    scene.add(poleIMB); scene.add(canopyIM); scene.add(towelIM);
+    // Volleyball net near the pier (2 posts merged + net plane).
+    {
+      const netPosts = mergeGeometries([
+        new THREE.CylinderGeometry(0.08, 0.08, 2.4, 6).translate(12, 1.2, 360),
+        new THREE.CylinderGeometry(0.08, 0.08, 2.4, 6).translate(20, 1.2, 360),
+      ]);
+      const posts = new THREE.Mesh(netPosts, new THREE.MeshStandardMaterial({ color: 0xd8d8d8, roughness: 0.8 }));
+      scene.add(posts);
+      const net = new THREE.Mesh(new THREE.PlaneGeometry(8, 1),
+        new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+      net.position.set(16, 1.9, 360); scene.add(net);
+    }
+    // Driftwood + six orange starfish scattered on the sand.
+    const wood = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 4, 7),
+      new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 1 }));
+    wood.rotation.z = Math.PI / 2; wood.rotation.y = 0.5; wood.position.set(-60, 0.3, 385); scene.add(wood);
+    const starGeo = new THREE.ConeGeometry(0.55, 0.18, 5).translate(0, 0.09, 0);
+    const starIM = new THREE.InstancedMesh(starGeo, new THREE.MeshStandardMaterial({ color: 0xff7a2a, roughness: 0.9 }), 6);
     for (let i = 0; i < 6; i++) {
-      m4.makeRotationY(beachRng.range(0, Math.PI * 2));
-      m4.setPosition(beachRng.range(-100, 100), 0.06, beachRng.range(262, 330));
+      let x = 0, z = 0, tries = 0;
+      do { x = brng.range(-120, 120); z = brng.range(265, 335); tries++; } while (!clearOfPierAndCar(x, z, 12) && tries < 20);
+      m4.makeRotationY(brng.range(0, Math.PI * 2)); m4.setPosition(x, 0, z);
       starIM.setMatrixAt(i, m4);
     }
     scene.add(starIM);
@@ -489,133 +408,126 @@ export function buildCity(scene, rng) {
     out.named[key] = { x: pl.x, z: pl.z };
     addSign(scene, pl, signW, signH, signY).position.set(pl.x, signY, pl.z - d / 2 - 0.3);
   }
-  // Cafe Alba: low pastel cafe with striped awning + outdoor tables
-  namedBox("cafeAlba", 22, 9, 16, 0xf2c29b, 14, 3.5, 7.5);
-  const awning = new THREE.Mesh(new THREE.BoxGeometry(22, 0.5, 5),
-    new THREE.MeshStandardMaterial({ map: awningTexture(), roughness: 0.7 }));
-  awning.position.set(CONFIG.PLACES.cafeAlba.x, 4.6, CONFIG.PLACES.cafeAlba.z - 10);
-  awning.rotation.x = -0.2; // front edge dips down, like a real awning
-  scene.add(awning);
-  // scalloped front edge: 11 small valance boxes along the awning front
+  // Cafe Alba: its own low building with a real storefront — NOT part of
+  // the generic named-box group. Warm plaster sides, the storefront
+  // texture on the street face, a striped awning with scalloped tabs,
+  // and tables that finally stand on legs, with umbrella poles, striped
+  // canopies and two chairs each.
+  const cafe = CONFIG.PLACES.cafeAlba;
+  out.buildings.push({ x: cafe.x, z: cafe.z, hw: 11, hd: 8, h: 9 });
+  out.named.cafeAlba = { x: cafe.x, z: cafe.z };
   {
-    const scalGeo = new THREE.BoxGeometry(1.9, 0.45, 0.25);
-    const scalIM = new THREE.InstancedMesh(scalGeo,
-      new THREE.MeshStandardMaterial({ map: awningTexture(), roughness: 0.7 }), 11);
-    for (let k = 0; k < 11; k++) {
-      m4.identity();
-      m4.setPosition(CONFIG.PLACES.cafeAlba.x - 10 + k * 2, 4.35 + (k % 2 === 0 ? 0.08 : -0.08), CONFIG.PLACES.cafeAlba.z - 12.6);
-      scalIM.setMatrixAt(k, m4);
-    }
-    scene.add(scalIM);
+    const plaster = new THREE.MeshStandardMaterial({ color: 0xf2c29b, roughness: 0.85 });
+    const cafeMesh = new THREE.Mesh(new THREE.BoxGeometry(22, 9, 16), plaster);
+    cafeMesh.position.set(cafe.x, 4.5, cafe.z);
+    cafeMesh.castShadow = true; cafeMesh.receiveShadow = true; scene.add(cafeMesh);
+    // Storefront texture on its own thin plane on the street face, so the
+    // box stays a single draw call instead of one per face material.
+    const front = new THREE.Mesh(new THREE.PlaneGeometry(22, 9),
+      new THREE.MeshStandardMaterial({ map: cafeStorefrontTexture(), roughness: 0.85 }));
+    front.position.set(cafe.x, 4.5, cafe.z - 8.06);
+    front.rotation.y = Math.PI; scene.add(front);
   }
-  // warm storefront: glass + shelves + door over the ground floor only
-  // (top y=5.5 stays below the sign, which starts at y≈5.75)
+  addSign(scene, cafe, 14, 3.5, 7.5).position.set(cafe.x, 7.5, cafe.z - 8.3);
+  const awningMat = new THREE.MeshStandardMaterial({ map: awningTexture(), roughness: 0.7 });
+  const awning = new THREE.Mesh(new THREE.BoxGeometry(22, 0.5, 5), awningMat);
+  awning.position.set(cafe.x, 4.6, cafe.z - 10);
+  awning.rotation.x = -0.17; // tipped down toward the street, about 10 degrees
+  scene.add(awning);
   {
-    const sfTex = storefrontTexture();
-    const storefront = new THREE.Mesh(new THREE.PlaneGeometry(20, 5.5),
-      new THREE.MeshStandardMaterial({ map: sfTex, emissive: 0xffffff, emissiveMap: sfTex, emissiveIntensity: 0.45, roughness: 0.4 }));
-    storefront.position.set(CONFIG.PLACES.cafeAlba.x, 2.75, CONFIG.PLACES.cafeAlba.z - 8.35);
-    storefront.rotation.y = Math.PI;
-    scene.add(storefront);
-    const menu = new THREE.Mesh(new THREE.PlaneGeometry(3, 1.5),
-      new THREE.MeshStandardMaterial({ map: menuTexture(), roughness: 0.9 }));
-    menu.position.set(CONFIG.PLACES.cafeAlba.x + 6, 1.0, CONFIG.PLACES.cafeAlba.z - 9.5);
-    menu.rotation.y = Math.PI;
-    scene.add(menu);
+    const tabs = [];
+    for (let i = 0; i < 11; i++) {
+      tabs.push(new THREE.BoxGeometry(1.9, 0.55, 0.3).rotateX(-0.17)
+        .translate(cafe.x - 10 + i * 2, 3.95, cafe.z - 12.45));
+    }
+    scene.add(new THREE.Mesh(mergeGeometries(tabs), awningMat));
   }
   // Warm storefront glow over the cafe tables: at night it lights Riko, Tia
   // and the pavement in front of the sign; by day it is a faint warm wash.
   const cafeGlow = new THREE.PointLight(0xff9e4a, 35, 22, 1.8);
-  cafeGlow.position.set(CONFIG.PLACES.cafeAlba.x, 5, CONFIG.PLACES.cafeAlba.z - 12);
+  cafeGlow.position.set(cafe.x, 5, cafe.z - 12);
   scene.add(cafeGlow);
-  const tableSpots = [[-8, -14], [0, -14], [8, -14]];
   const tableGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.15, 10);
   tableGeo.translate(0, 1.1, 0);
   const tableIM = new THREE.InstancedMesh(tableGeo, new THREE.MeshStandardMaterial({ color: 0xffffff }), 3);
-  tableSpots.forEach(([dx, dz], i) => {
-    m4.identity(); m4.setPosition(CONFIG.PLACES.cafeAlba.x + dx, 0, CONFIG.PLACES.cafeAlba.z + dz);
+  [[-8, -14], [0, -14], [8, -14]].forEach(([dx, dz], i) => {
+    m4.identity(); m4.setPosition(cafe.x + dx, 0, cafe.z + dz);
     tableIM.setMatrixAt(i, m4);
   });
   scene.add(tableIM);
-  // table legs + umbrella poles + red cone canopies (1 instanced draw each)
+  // Table legs (the old tops floated), umbrella poles, striped canopies.
   {
-    const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.1, 6);
-    legGeo.translate(0, 0.55, 0);
-    const legIM = new THREE.InstancedMesh(legGeo,
-      new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7 }), 3);
-    const tPoleGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
-    tPoleGeo.translate(0, 1.2, 0);
-    const tPoleIM = new THREE.InstancedMesh(tPoleGeo,
-      new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.7 }), 3);
-    const canopyGeo = new THREE.ConeGeometry(1.7, 0.8, 10);
-    canopyGeo.translate(0, 2.6, 0);
+    const legParts = [-8, 0, 8].map((dx) =>
+      new THREE.CylinderGeometry(0.09, 0.12, 1.1, 6).translate(cafe.x + dx, 0.55, cafe.z - 14));
+    scene.add(new THREE.Mesh(mergeGeometries(legParts),
+      new THREE.MeshStandardMaterial({ color: 0x222226, roughness: 0.8 })));
+    const poleParts = [-8, 0, 8].map((dx) =>
+      new THREE.CylinderGeometry(0.06, 0.06, 1.7, 6).translate(cafe.x + dx, 2.0, cafe.z - 14));
+    scene.add(new THREE.Mesh(mergeGeometries(poleParts),
+      new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.8 })));
+    const canopyGeo = new THREE.ConeGeometry(1.7, 0.8, 10).translate(0, 3.2, 0);
     const canopyIM = new THREE.InstancedMesh(canopyGeo,
-      new THREE.MeshStandardMaterial({ color: 0xd83a2a, roughness: 0.8, flatShading: true }), 3);
-    tableSpots.forEach(([dx, dz], i) => {
-      m4.identity(); m4.setPosition(CONFIG.PLACES.cafeAlba.x + dx, 0, CONFIG.PLACES.cafeAlba.z + dz);
-      legIM.setMatrixAt(i, m4); tPoleIM.setMatrixAt(i, m4); canopyIM.setMatrixAt(i, m4);
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 }), 3);
+    const canopyCols = [0xff7a2a, 0xf6ead6, 0xff7a2a];
+    const cc = new THREE.Color();
+    [-8, 0, 8].forEach((dx, i) => {
+      m4.identity(); m4.setPosition(cafe.x + dx, 0, cafe.z - 14);
+      canopyIM.setMatrixAt(i, m4);
+      canopyIM.setColorAt(i, cc.setHex(canopyCols[i]));
     });
-    scene.add(legIM); scene.add(tPoleIM); scene.add(canopyIM);
-  }
-  // 2 chairs per table (seat + backrest merged, 1 instanced draw)
-  {
-    const chairGeo = mergeGeometries([
-      new THREE.BoxGeometry(0.55, 0.1, 0.55).translate(0, 0.45, 0),
-      new THREE.BoxGeometry(0.55, 0.6, 0.08).translate(0, 0.8, -0.24),
-    ]);
-    const chairIM = new THREE.InstancedMesh(chairGeo,
-      new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.9 }), 6);
-    let ci = 0;
-    for (const [dx, dz] of tableSpots) {
-      for (const [off, yaw] of [[1.8, Math.PI], [-1.8, 0]]) {
-        m4.makeRotationY(yaw);
-        m4.setPosition(CONFIG.PLACES.cafeAlba.x + dx, 0, CONFIG.PLACES.cafeAlba.z + dz + off);
-        chairIM.setMatrixAt(ci++, m4);
+    scene.add(canopyIM);
+    // Two chairs per table: one road-side facing the cafe, one cafe-side
+    // facing the road. Seats + backs merged into one dark piece.
+    const chairParts = [];
+    for (const dx of [-8, 0, 8]) {
+      for (const side of [-1, 1]) {
+        const cz = cafe.z - 14 + side * 1.35;
+        chairParts.push(new THREE.BoxGeometry(0.55, 0.08, 0.55).translate(cafe.x + dx, 0.55, cz));
+        chairParts.push(new THREE.BoxGeometry(0.55, 0.7, 0.08).translate(cafe.x + dx, 0.95, cz + side * 0.28));
       }
     }
-    chairIM.castShadow = true; scene.add(chairIM);
+    scene.add(new THREE.Mesh(mergeGeometries(chairParts),
+      new THREE.MeshStandardMaterial({ color: 0x4a2a1a, roughness: 0.9 })));
   }
-  // planter in the lower-left foreground of the mission shot (camera
-  // faces south, so screen-left is world +x: the planter sits east of
-  // the camera, in front of the right-hand table)
+  // Night-shot foreground: two planters and an A-board menu.
   {
-    const planter = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.7, 1.6),
-      new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1 }));
-    planter.position.set(64, 0.35, -76);
-    planter.castShadow = true; scene.add(planter);
-    const shrub = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0x3a7a3a, roughness: 1 }));
-    shrub.scale.y = 0.7; shrub.position.set(64, 0.95, -76);
-    shrub.castShadow = true; scene.add(shrub);
+    const boxParts = [[56, -76], [48, -76]].map(([x, z]) =>
+      new THREE.BoxGeometry(1.4, 0.8, 1.4).translate(x, 0.4, z));
+    scene.add(new THREE.Mesh(mergeGeometries(boxParts),
+      new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 1 })));
+    const shrubParts = [];
+    for (const [x, z] of [[56, -76], [48, -76]]) {
+      shrubParts.push(new THREE.SphereGeometry(0.9, 8, 6).translate(x, 1.25, z));
+      shrubParts.push(new THREE.SphereGeometry(0.5, 8, 6).translate(x + 0.4, 1.7, z));
+    }
+    scene.add(new THREE.Mesh(mergeGeometries(shrubParts),
+      new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 1 })));
+    const boardParts = [
+      new THREE.PlaneGeometry(1.3, 1.7).rotateX(-0.3).translate(0, 0.8, 0.26),
+      new THREE.PlaneGeometry(1.3, 1.7).rotateX(0.3).translate(0, 0.8, -0.26),
+    ];
+    const board = new THREE.Mesh(mergeGeometries(boardParts),
+      new THREE.MeshStandardMaterial({ map: aboardTexture(), side: THREE.DoubleSide, roughness: 0.9 }));
+    board.position.set(52, 0, -73); board.rotation.y = 0.5; scene.add(board);
   }
-  // second planter, mirroring the first across the cafe centre (x=56):
-  // it anchors the lower-right foreground of the mission shot, in front
-  // of the left-hand table — 6 m clear of the mission-1 walk line (z=-70)
+  // A red car parked at the kerb in front of the cafe — a static prop, not
+  // traffic, not in the carjack census.
   {
-    const planter = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.7, 1.6),
-      new THREE.MeshStandardMaterial({ color: 0x4a3a2a, roughness: 1 }));
-    planter.position.set(48, 0.35, -76);
-    planter.castShadow = true; scene.add(planter);
-    const shrub = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8),
-      new THREE.MeshStandardMaterial({ color: 0x3a7a3a, roughness: 1 }));
-    shrub.scale.y = 0.7; shrub.position.set(48, 0.95, -76);
-    shrub.castShadow = true; scene.add(shrub);
-  }
-  // A-board menu beside the centre table (reuses the wall menu texture):
-  // two slanted panels leaning top-to-top, menu face toward the camera.
-  // 3 m clear of the mission-1 walk line (z=-70); low (top y≈1.0) so it
-  // never hides Riko, Tia or the sign.
-  {
-    const boardMat = new THREE.MeshStandardMaterial({ map: menuTexture(), roughness: 0.9 });
-    const boardGeo = new THREE.PlaneGeometry(1.2, 1.0);
-    const north = new THREE.Mesh(boardGeo, boardMat);
-    north.position.set(58.5, 0.48, -73.15);
-    north.rotation.set(0.22, Math.PI, 0);
-    north.castShadow = true; scene.add(north);
-    const south = new THREE.Mesh(boardGeo, boardMat);
-    south.position.set(58.5, 0.48, -72.85);
-    south.rotation.set(-0.22, 0, 0);
-    south.castShadow = true; scene.add(south);
+    const redCar = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.75, 4.4),
+      new THREE.MeshStandardMaterial({ color: 0xc23a2e, roughness: 0.35, metalness: 0.55 }));
+    body.position.y = 0.65; body.castShadow = true; redCar.add(body);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.42, 2.2),
+      new THREE.MeshStandardMaterial({ color: 0x7fa8bc, roughness: 0.3, metalness: 0.2 }));
+    cabin.position.y = 1.24; redCar.add(cabin);
+    const wheelParts = [];
+    for (const sx of [-0.9, 0.9]) for (const sz of [-1.3, 1.3]) {
+      wheelParts.push(new THREE.CylinderGeometry(0.38, 0.38, 0.3, 10).rotateZ(Math.PI / 2).translate(sx, 0.38, sz));
+    }
+    redCar.add(new THREE.Mesh(mergeGeometries(wheelParts),
+      new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.9 })));
+    redCar.position.set(60, 0, -74); redCar.rotation.y = Math.PI / 2;
+    scene.add(redCar);
   }
   // Bay Trust Bank: tall stone bank with columns + steps
   namedBox("bank", 26, 22, 20, 0xd8d2c4, 18, 4, 18);
@@ -627,10 +539,7 @@ export function buildCity(scene, rng) {
     colIM.setMatrixAt(i, m4);
   });
   colIM.castShadow = true; scene.add(colIM);
-  // Lucky Gull Casino: wide neon building. Body tint lightened r5
-  // (0x3a2a4a -> 0x5a3a6e): the near-black purple multiplied the facade
-  // texture down to a flat dark wall in the city shot — mid-purple keeps
-  // the identity and lets the lit windows read.
+  // Lucky Gull Casino: wide neon building
   namedBox("casino", 30, 16, 22, 0x5a3a6e, 20, 5, 13);
   // Quick Coat Garage: low wide, open shutter (dark mouth)
   namedBox("garage", 24, 8, 18, 0x4a6a8a, 18, 3.5, 6.5);
@@ -639,10 +548,7 @@ export function buildCity(scene, rng) {
   // Iron & Lead Arms: small dark shop
   namedBox("gunshop", 16, 8, 14, 0x5a2a2a, 12, 3, 6.5);
   // flush the instanced named boxes (light facade texture + per-instance tint,
-  // so the pale bank reads as a building with windows, not a blank white box).
-  // litFrac 0.4 (r5, was 0.25): the casino's dark tint needs more lit
-  // windows to read like the downtown towers. Safe: this is the last rng
-  // draw in buildCity, so the city layout stream never shifts.
+  // so the pale bank reads as a building with windows, not a blank white box)
   {
     const nbGeo = new THREE.BoxGeometry(1, 1, 1);
     nbGeo.translate(0, 0.5, 0);

@@ -74,8 +74,16 @@ export function createAudio() {
       radioTimer = setTimeout(radioTick, 100);
     },
     stopRadio() { if (radioTimer) { clearTimeout(radioTimer); radioTimer = null; } },
-    setStation(i) { radioStation = ((i % 3) + 3) % 3; radioStep = 0; return CONFIG.STATIONS[radioStation].name; },
-    station() { return CONFIG.STATIONS[radioStation].name; },
+    setStation(i) {
+      const wrapped = ((i % 3) + 3) % 3;
+      radioStation = wrapped;
+      radioStep = 0;
+      return this.station();
+    },
+    station() {
+      const current = CONFIG.STATIONS[radioStation];
+      return current.name + " • " + current.song;
+    },
     setRadioOn(on) { radioOn = on; if (!on) this.stopRadio(); else this.startRadio(); },
     setEngine(rpm, on) {
       if (!ctx) return;

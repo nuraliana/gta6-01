@@ -73,9 +73,27 @@ export const CONFIG = {
   },
   // Radio stations: each car remembers its own station.
   STATIONS: [
-    { name: "WAVE 88", genre: "synthwave", root: 57, bpm: 96 },
-    { name: "FUEGO 101", genre: "latin", root: 62, bpm: 120 },
-    { name: "TALK BAY", genre: "talk", root: 50, bpm: 72 },
+    {
+      name: "WAVE 88",
+      song: "Neon Tide",
+      genre: "synthwave",
+      root: 57,
+      bpm: 96,
+    },
+    {
+      name: "FUEGO 101",
+      song: "Solstice Salsa",
+      genre: "latin",
+      root: 62,
+      bpm: 120,
+    },
+    {
+      name: "TALK BAY",
+      song: "Voices of the Bay",
+      genre: "talk",
+      root: 50,
+      bpm: 72,
+    },
   ],
   // Missions: name, reward, one-line arc. Steps live in missions.js.
   MISSIONS: [

@@ -68,7 +68,7 @@ export function createMissions(scene, city, tia) {
       state.timer = 90;
       setObjective("Pick up the package at the Port", -196, 84, "90 seconds on the clock");
     }
-    else if (i === 3) setObjective("Get 2 stars — then LOSE the heat", 0, 0, "Steal a car in front of witnesses, or wait for trouble");
+    else if (i === 3) setObjective("Reach 2 stars — exposure builds heat the longer you stay visible", 0, 0, "Stay visible too long and a witness phones it in after 20 seconds");
     else if (i === 4) {
       state.drops = [
         [-140, -140], [140, 140], [-84, 196], [196, -28], [0, 84],
@@ -148,7 +148,7 @@ export function createMissions(scene, city, tia) {
             state.step = 1;
             setObjective("LOSE the heat — get to 0 stars", P.garage.x, P.garage.z, "Respray at Quick Coat ($250) clears your description fast");
           } else {
-            setObjective("Get 2 stars — steal a car where people can see", 0, 0, "Or smash something. The city is watching.");
+            setObjective("Reach 2 stars — exposure builds heat the longer you stay visible", 0, 0, "Keep yourself in plain sight and a witness will call the police after 20 seconds");
             // nudge: after 20 s with no heat, a witness reports the player anyway
             state.nudge = (state.nudge || 0) + dt;
             if (state.nudge > 20) { ctx.police.addWanted(2, px, pz); state.nudge = 0; }
