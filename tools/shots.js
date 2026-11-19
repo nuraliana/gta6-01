@@ -41,7 +41,11 @@ const takes = [
   // Cover is staged by the scene itself (wide shot down road x=28, camera
   // south looking north) — no frameCar reframe, which would lose the heli.
   { scene: "cover", tag: "a" },
-  { scene: "cover", tag: "b", photo: [40, 7, 66, 0.35, 0.14] },
+  {
+    scene: "cover",
+    tag: "b",
+    photo: [24, 6, 62, -0.2, 0.18],
+  },
   { scene: "cover", tag: "c", photo: [24, 4, 58, -0.15, 0.2] },
   { scene: "city", tag: "a" },
   { scene: "city", tag: "b", photo: [90, 30, 110, 0.9, -0.22] },
